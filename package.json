@@ -1,0 +1,38 @@
+{
+  "name": "crypto-lab-bcrypt-forge",
+  "version": "1.0.0",
+  "description": "Browser-based interactive bcrypt educational demo",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "type-check": "tsc --noEmit",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && gh-pages -d dist"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemslibrarian/crypto-lab-bcrypt-forge.git"
+  },
+  "keywords": [
+    "cryptography",
+    "bcrypt",
+    "password-hashing",
+    "security",
+    "education"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/systemslibrarian/crypto-lab-bcrypt-forge/issues"
+  },
+  "homepage": "https://systemslibrarian.github.io/crypto-lab-bcrypt-forge/",
+  "dependencies": {
+    "bcryptjs": "^3.0.3"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.3.0",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.8"
+  }
+}
