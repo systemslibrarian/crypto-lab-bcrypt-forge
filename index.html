@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Interactive browser-based bcrypt educational demo — hash generator, cost benchmark, timing-safe comparison, and real-world attack scenarios." />
+  <meta name="theme-color" content="#0f1117" />
+  <title>bcrypt Forge — crypto-lab</title>
+  <script>
+    (function () {
+      const saved = localStorage.getItem('theme');
+      document.documentElement.setAttribute('data-theme', saved ?? 'dark');
+    })();
+  </script>
+  <script type="module" crossorigin src="/crypto-lab-bcrypt-forge/assets/index-CAkfoYxw.js"></script>
+  <link rel="stylesheet" crossorigin href="/crypto-lab-bcrypt-forge/assets/index-B9slpJ5Z.css">
+</head>
+<body>
+
+  <!-- Skip link for keyboard users -->
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <!-- Screen reader live announcement region -->
+  <div id="aria-announcer" role="status" aria-live="polite" aria-atomic="true" class="sr-only"></div>
+
+  <!-- ═══════════════════════════════════════════════════════ HEADER -->
+  <header class="site-header" role="banner">
+    <div class="site-header__inner">
+      <div class="site-header__top">
+        <span class="category-chip" aria-label="Category: Password Hashing">Password Hashing</span>
+        <button id="theme-toggle"
+                class="theme-toggle"
+                type="button"
+                aria-label="Switch to light mode"
+                style="position: absolute; top: 0; right: 0;">
+          🌙
+        </button>
+      </div>
+
+      <div class="site-header__title-block">
+        <h1 class="site-title">
+          <span class="site-title__main">bcrypt Forge</span>
+          <span class="site-title__sub">Password Hashing — Interactive Deep Dive</span>
+        </h1>
+        <div class="primitive-chips" aria-label="Cryptographic primitives used">
+          <span class="primitive-chips__label">Topics covered:</span>
+          <span class="chip">Blowfish</span>
+          <span class="chip">bcrypt</span>
+          <span class="chip">Cost Factor</span>
+          <span class="chip">Timing-Safe</span>
+        </div>
+      </div>
+
+      <div class="why-matters" role="note" aria-label="Why this matters">
+        <strong>Why this matters:</strong>
+        bcrypt is the most widely deployed password hashing scheme in production systems.
+        Understanding its structure helps developers store, verify, and migrate passwords safely.
+      </div>
+    </div>
+  </header>
+
+  <!-- ─── Panel navigation (sticky) ────────────────────────────── -->
+  <div class="tabs-sticky-bar">
+    <div class="panel-tabs-wrapper" role="tablist" aria-label="Demo panels">
+      <button class="panel-tab" role="tab" aria-selected="true" tabindex="0"
+              aria-controls="panel-1" id="tab-1">
+        <span class="panel-tab__num" aria-hidden="true">1</span>
+        <span class="panel-tab__label">Anatomy</span>
+      </button>
+      <button class="panel-tab" role="tab" aria-selected="false" tabindex="-1"
+              aria-controls="panel-2" id="tab-2">
+        <span class="panel-tab__num" aria-hidden="true">2</span>
+        <span class="panel-tab__label">Hash Generator</span>
+      </button>
+      <button class="panel-tab" role="tab" aria-selected="false" tabindex="-1"
+              aria-controls="panel-3" id="tab-3">
+        <span class="panel-tab__num" aria-hidden="true">3</span>
+        <span class="panel-tab__label">Benchmark</span>
+      </button>
+      <button class="panel-tab" role="tab" aria-selected="false" tabindex="-1"
+              aria-controls="panel-4" id="tab-4">
+        <span class="panel-tab__num" aria-hidden="true">4</span>
+        <span class="panel-tab__label">Verify</span>
+      </button>
+      <button class="panel-tab" role="tab" aria-selected="false" tabindex="-1"
+              aria-controls="panel-5" id="tab-5">
+        <span class="panel-tab__num" aria-hidden="true">5</span>
+        <span class="panel-tab__label">Alternatives</span>
+      </button>
+      <button class="panel-tab" role="tab" aria-selected="false" tabindex="-1"
+              aria-controls="panel-6" id="tab-6">
+        <span class="panel-tab__num" aria-hidden="true">6</span>
+        <span class="panel-tab__label">Attack Demo</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════ MAIN -->
+  <main id="main-content" class="site-main">
+
+    <!-- ─────────────────────────────────────────────── PANEL 1: Anatomy -->
+    <section class="panel" id="panel-1" role="tabpanel" aria-labelledby="tab-1">
+      <div class="panel__inner">
+        <h2 class="panel__title">What bcrypt Actually Is</h2>
+        <p class="panel__intro">
+          A Blowfish-based password hashing scheme designed by Niels Provos &amp; David Mazières (1999).
+          Deliberately slow and adaptive — bcrypt's cost factor lets security scale with hardware improvements.
+        </p>
+
+        <section class="panel-section" aria-labelledby="p1-usage-heading">
+          <h3 id="p1-usage-heading" class="section-title">Where bcrypt Is Used</h3>
+          <ul>
+            <li>Linux PAM (<code>/etc/shadow</code>)</li>
+            <li>PHP <code>password_hash()</code></li>
+            <li>Node.js <code>bcrypt</code> / <code>bcryptjs</code></li>
+            <li>Django (optional backend)</li>
+            <li>Ruby on Rails (default via <code>has_secure_password</code>)</li>
+          </ul>
+        </section>
+
+        <section class="panel-section" aria-labelledby="p1-anatomy-heading">
+          <h3 id="p1-anatomy-heading" class="section-title">Three-Part Output Anatomy</h3>
+          <div id="p1-anatomy-display" class="anatomy-display" aria-label="Annotated bcrypt hash"></div>
+          <div id="p1-anatomy-legend" class="anatomy-legend" role="list" aria-label="Hash field legend"></div>
+          <div id="p1-anatomy-arrows" style="font-family: var(--font-mono); font-size: 0.8125rem; color: var(--color-text-3); margin-top: var(--space-2); overflow-x: auto; white-space: nowrap;" aria-hidden="true"></div>
+        </section>
+
+        <div class="callout">
+          <div class="callout__title">Why This Matters</div>
+          bcrypt is the most widely deployed password hashing scheme in production systems.
+          Understanding its structure helps developers store, verify, and migrate passwords safely.
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────── PANEL 2: Hash Generator -->
+    <section class="panel" id="panel-2" role="tabpanel" aria-labelledby="tab-2" hidden>
+      <div class="panel__inner">
+        <h2 class="panel__title">Hash Generator</h2>
+        <p class="panel__intro">
+          Enter a password and choose a cost factor. The output is a real bcrypt hash
+          computed in your browser — not simulated.
+        </p>
+
+        <section class="panel-section" aria-labelledby="p2-input-heading">
+          <h3 id="p2-input-heading" class="section-title">Input</h3>
+
+          <div class="control-row">
+            <label for="p2-password" class="control-label">Password:</label>
+            <div class="password-wrapper">
+              <input id="p2-password"
+                     type="password"
+                     class="text-input"
+                     value="correcthorsebatterystaple"
+                     autocomplete="off"
+                     aria-label="Password to hash" />
+              <button id="p2-password-toggle" class="password-toggle" type="button"
+                      aria-label="Show password">👁</button>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <label for="p2-cost" class="control-label">Cost factor:</label>
+            <div class="range-row">
+              <input id="p2-cost" type="range" min="4" max="14" value="10"
+                     aria-label="Cost factor" aria-valuemin="4" aria-valuemax="14" aria-valuenow="10" />
+              <span id="p2-cost-value" class="range-value">10</span>
+            </div>
+            <span id="p2-timing-estimate" style="font-size: 0.8125rem; color: var(--color-text-3);">
+              Estimated time: ~100 ms
+            </span>
+          </div>
+
+          <div class="button-row">
+            <button id="p2-hash-btn" type="button" class="btn btn--primary">
+              Hash It
+            </button>
+          </div>
+        </section>
+
+        <section class="panel-section" aria-labelledby="p2-output-heading">
+          <h3 id="p2-output-heading" class="section-title">Output</h3>
+          <div id="p2-result" class="result-container" aria-live="polite" aria-label="Hash result">
+            Click "Hash It" to generate a bcrypt hash.
+          </div>
+          <div id="p2-timing" style="font-size: 0.875rem; color: var(--color-text-2); margin-top: var(--space-2);" aria-live="polite"></div>
+          <div id="p2-cost-bar" style="margin-top: var(--space-3);" aria-label="Relative cost visualization"></div>
+        </section>
+
+        <div class="callout">
+          <div class="callout__title">Why This Matters</div>
+          Cost 12 is the current recommended minimum for login systems in 2024–2025.
+          Cost 10 was standard in 2012 — hardware has gotten faster, but bcrypt's
+          cost factor lets you keep up without changing your algorithm.
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────── PANEL 3: Benchmark -->
+    <section class="panel" id="panel-3" role="tabpanel" aria-labelledby="tab-3" hidden>
+      <div class="panel__inner">
+        <h2 class="panel__title">Cost Factor Timing Benchmark</h2>
+        <p class="panel__intro">
+          Hashes the same password at cost factors 8 through 14, sequentially.
+          Each +1 in cost doubles the computation time. This is by design — the slowness IS the security.
+        </p>
+
+        <div class="button-row">
+          <button id="p3-run-btn" type="button" class="btn btn--primary">
+            Run Benchmark
+          </button>
+        </div>
+
+        <div id="p3-status" role="status" aria-live="polite" class="status-display">
+          Click "Run Benchmark" to start sequential hashing at cost factors 8–14.
+        </div>
+
+        <section class="panel-section" aria-labelledby="p3-chart-heading">
+          <h3 id="p3-chart-heading" class="section-title">Results</h3>
+          <div id="p3-chart" class="bar-chart" aria-label="Benchmark bar chart"></div>
+        </section>
+
+        <div id="p3-cracking-estimates" style="margin-top: var(--space-4);" aria-label="Estimated cracking times"></div>
+
+        <div class="callout callout--warning">
+          <div class="callout__title">Why Can't We Just Make It Faster?</div>
+          The slowness IS the security. An attacker with a GPU farm faces the same
+          cost per hash you do. Each cost increase doubles their work for every
+          password in a breached database.
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────── PANEL 4: Verify -->
+    <section class="panel" id="panel-4" role="tabpanel" aria-labelledby="tab-4" hidden>
+      <div class="panel__inner">
+        <h2 class="panel__title">Verify &amp; Timing-Safe Comparison</h2>
+        <p class="panel__intro">
+          bcrypt.compare() verifies a password against a stored hash using constant-time comparison,
+          preventing timing oracle attacks.
+        </p>
+
+        <!-- Panel A: Basic verify -->
+        <section class="panel-section" aria-labelledby="p4a-heading">
+          <h3 id="p4a-heading" class="section-title">Basic Verify</h3>
+
+          <div class="control-row">
+            <label for="p4-password" class="control-label">Password:</label>
+            <div class="password-wrapper">
+              <input id="p4-password"
+                     type="password"
+                     class="text-input"
+                     value="correcthorsebatterystaple"
+                     autocomplete="off"
+                     aria-label="Password to verify" />
+              <button id="p4-password-toggle" class="password-toggle" type="button"
+                      aria-label="Show password">👁</button>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <label for="p4-hash" class="control-label">Stored hash:</label>
+            <input id="p4-hash"
+                   type="text"
+                   class="text-input"
+                   placeholder="Paste a bcrypt hash or generate one in Exhibit 2"
+                   aria-label="bcrypt hash to verify against" />
+          </div>
+
+          <div class="button-row">
+            <button id="p4-verify-btn" type="button" class="btn btn--primary">
+              Verify
+            </button>
+            <button id="p4-example-correct-btn" type="button" class="btn btn--secondary btn--small">
+              Load Correct Pair
+            </button>
+            <button id="p4-example-wrong-btn" type="button" class="btn btn--secondary btn--small">
+              Load Wrong Pair
+            </button>
+          </div>
+
+          <div id="p4-verify-result" aria-live="polite"></div>
+        </section>
+
+        <!-- Panel B: Timing attack visualizer -->
+        <section class="panel-section" aria-labelledby="p4b-heading">
+          <h3 id="p4b-heading" class="section-title">Timing Attack Visualizer</h3>
+          <p style="color: var(--color-text-2); font-size: 0.875rem; margin-bottom: var(--space-4);">
+            A naive <code>===</code> string comparison leaks information about where the first mismatch occurs.
+            bcrypt's constant-time compare takes the same duration regardless of match or mismatch.
+          </p>
+
+          <div class="button-row">
+            <button id="p4-timing-btn" type="button" class="btn btn--primary">
+              Run Timing Comparison
+            </button>
+          </div>
+
+          <div class="two-col" style="margin-top: var(--space-4);">
+            <div>
+              <h4 style="font-size: 0.875rem; font-weight: 700; color: var(--color-invalid); margin-bottom: var(--space-2);">
+                Naive === (variable timing)
+              </h4>
+              <div id="p4-naive-chart" class="timing-chart" aria-label="Naive comparison timings"></div>
+            </div>
+            <div>
+              <h4 style="font-size: 0.875rem; font-weight: 700; color: var(--color-valid); margin-bottom: var(--space-2);">
+                bcrypt.compare (constant time)
+              </h4>
+              <div id="p4-bcrypt-chart" class="timing-chart" aria-label="bcrypt comparison timings"></div>
+            </div>
+          </div>
+
+          <div id="p4-timing-stats" style="margin-top: var(--space-4);" aria-live="polite"></div>
+        </section>
+
+        <div class="callout callout--warning">
+          <div class="callout__title">Why This Matters</div>
+          A timing oracle attack recovers secrets one byte at a time by measuring comparison duration.
+          Constant-time comparison is not optional — it is a fundamental requirement for any
+          security-sensitive string comparison.
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────── PANEL 5: Alternatives -->
+    <section class="panel" id="panel-5" role="tabpanel" aria-labelledby="tab-5" hidden>
+      <div class="panel__inner">
+        <h2 class="panel__title">bcrypt vs Alternatives</h2>
+        <p class="panel__intro">
+          Not all hashing algorithms are equal. This comparison shows why bcrypt remains a strong choice
+          and when to prefer alternatives.
+        </p>
+
+        <section class="panel-section" aria-labelledby="p5-table-heading">
+          <h3 id="p5-table-heading" class="section-title">Algorithm Comparison</h3>
+          <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
+            <table class="comparison-table" id="p5-table" aria-label="Password hashing algorithm comparison">
+              <thead>
+                <tr>
+                  <th scope="col">Algorithm</th>
+                  <th scope="col">Year</th>
+                  <th scope="col">Adaptive</th>
+                  <th scope="col">Memory-hard</th>
+                  <th scope="col">GPU-resistant</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody id="p5-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-section" aria-labelledby="p5-live-heading">
+          <h3 id="p5-live-heading" class="section-title">Live Timing: bcrypt vs PBKDF2</h3>
+          <p style="color: var(--color-text-2); font-size: 0.875rem; margin-bottom: var(--space-4);">
+            Hash the same password with bcrypt (cost 12) and PBKDF2 (100,000 rounds via WebCrypto).
+          </p>
+          <div class="button-row">
+            <button id="p5-race-btn" type="button" class="btn btn--primary">
+              Run Comparison
+            </button>
+          </div>
+          <div id="p5-race-result" aria-live="polite" style="margin-top: var(--space-3);"></div>
+        </section>
+
+        <div class="callout callout--valid">
+          <div class="callout__title">When Should You Choose bcrypt Over Argon2id?</div>
+          When your stack defaults to it, or when FIPS compliance rules out Argon2.
+          Otherwise prefer Argon2id for new systems.
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────── PANEL 6: Attack Demo -->
+    <section class="panel" id="panel-6" role="tabpanel" aria-labelledby="tab-6" hidden>
+      <div class="panel__inner">
+        <h2 class="panel__title">Real-World Attack Demo</h2>
+        <p class="panel__intro">
+          Three breach scenarios showing what happens when passwords are stored
+          as plaintext, unsalted MD5, or bcrypt hashes.
+        </p>
+
+        <!-- Scenario A: Plaintext -->
+        <div class="scenario-card" id="p6-scenario-a">
+          <div class="scenario-card__title">
+            <span class="scenario-card__badge scenario-card__badge--danger">Scenario A</span>
+            Plaintext Storage
+          </div>
+          <div id="p6a-table-container"></div>
+          <div class="button-row" style="margin-top: var(--space-3);">
+            <button id="p6a-breach-btn" type="button" class="btn btn--attack">
+              Breach Database
+            </button>
+          </div>
+          <div id="p6a-callout" class="callout callout--warning" style="display: none;">
+            <div class="callout__title">Impact</div>
+            Plaintext breach = immediate total compromise. Every user's password is exposed instantly.
+          </div>
+        </div>
+
+        <!-- Scenario B: MD5 -->
+        <div class="scenario-card" id="p6-scenario-b">
+          <div class="scenario-card__title">
+            <span class="scenario-card__badge scenario-card__badge--warning">Scenario B</span>
+            Unsalted MD5 Hashes
+          </div>
+          <div id="p6b-table-container"></div>
+          <div class="button-row" style="margin-top: var(--space-3);">
+            <button id="p6b-breach-btn" type="button" class="btn btn--attack">
+              Look Up in Rainbow Table
+            </button>
+          </div>
+          <div id="p6b-callout" class="callout callout--warning" style="display: none;">
+            <div class="callout__title">Impact</div>
+            Rainbow tables precompute hashes for billions of common passwords.
+            Unsalted hashes fall in seconds. Duplicate passwords produce identical hashes —
+            one lookup compromises all users sharing that password.
+          </div>
+        </div>
+
+        <!-- Scenario C: bcrypt -->
+        <div class="scenario-card" id="p6-scenario-c">
+          <div class="scenario-card__title">
+            <span class="scenario-card__badge scenario-card__badge--safe">Scenario C</span>
+            bcrypt Hashes (cost 12)
+          </div>
+          <div id="p6c-table-container"></div>
+          <div class="button-row" style="margin-top: var(--space-3);">
+            <button id="p6c-breach-btn" type="button" class="btn btn--attack">
+              Attempt Crack
+            </button>
+          </div>
+          <div id="p6c-progress" style="display: none;">
+            <div class="progress-bar"><div class="progress-bar__fill" id="p6c-progress-fill"></div></div>
+            <div id="p6c-progress-text" style="font-size: 0.8125rem; color: var(--color-text-2); margin-top: var(--space-2);" aria-live="polite"></div>
+          </div>
+          <div id="p6c-callout" class="callout callout--valid" style="display: none;">
+            <div class="callout__title">Impact</div>
+            With bcrypt, a breached database buys your users time —
+            potentially weeks or months — to change their passwords.
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer style="text-align:center; padding: 1.5rem; font-size: 0.85rem; opacity: 0.7; margin-top: 2rem;">
+    Whether you eat or drink or whatever you do, do it all for the glory of God. — 1 Corinthians 10:31
+  </footer>
+
+</body>
+</html>
