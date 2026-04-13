@@ -43,6 +43,20 @@ npm run dev
 
 ---
 
+## Deploy to GitHub Pages
+
+This repository includes a workflow at `.github/workflows/deploy-pages.yml`.
+
+1. Push to the `main` branch.
+2. In GitHub, go to **Settings > Pages**.
+3. Set **Source** to **GitHub Actions**.
+4. Wait for the **Deploy to GitHub Pages** workflow to finish.
+
+Your site will be published at:
+**https://systemslibrarian.github.io/crypto-lab-bcrypt-forge/**
+
+---
+
 ## Part of the Crypto-Lab Suite
 
 Part of [crypto-lab](https://systemslibrarian.github.io/crypto-lab/) — browser-based cryptography demos spanning 2,500 years of cryptographic history to NIST FIPS 2024 post-quantum standards.
