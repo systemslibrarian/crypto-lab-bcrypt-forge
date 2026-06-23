@@ -3,19 +3,125 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Interactive browser-based bcrypt educational demo — hash generator, cost benchmark, timing-safe comparison, and real-world attack scenarios." />
-  <meta name="theme-color" content="#0f1117" />
-  <title>bcrypt Forge — crypto-lab</title>
+  <meta name="description" content="Interactive browser-based bcrypt educational demo — hash generator, cost benchmark, timing-safe comparison, and real-world attack scenarios. Real hashes computed in a Web Worker, never simulated." />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f0f4ff" media="(prefers-color-scheme: light)" />
+  <title>bcrypt Forge — Interactive Password Hashing Deep Dive</title>
+
+  <!-- Icons -->
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./favicon.svg" />
+
+  <!-- Open Graph / social preview -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="bcrypt Forge — Interactive Password Hashing Deep Dive" />
+  <meta property="og:description" content="Hash generator, cost-factor benchmark, timing-safe verify, and real-world breach scenarios — real bcrypt computed in your browser." />
+  <meta property="og:url" content="https://systemslibrarian.github.io/crypto-lab-bcrypt-forge/" />
+  <meta property="og:image" content="https://systemslibrarian.github.io/crypto-lab-bcrypt-forge/og-image.svg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="bcrypt Forge — Interactive Password Hashing Deep Dive" />
+  <meta name="twitter:description" content="Hash generator, cost-factor benchmark, timing-safe verify, and real-world breach scenarios — real bcrypt in your browser." />
+  <meta name="twitter:image" content="https://systemslibrarian.github.io/crypto-lab-bcrypt-forge/og-image.svg" />
+
   <script>
     (function () {
-      const saved = localStorage.getItem('theme');
-      document.documentElement.setAttribute('data-theme', saved ?? 'dark');
+      try {
+        const saved = localStorage.getItem('theme');
+        if (saved === 'light' || saved === 'dark') {
+          document.documentElement.setAttribute('data-theme', saved);
+        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      } catch (_) { /* localStorage blocked — fall back to default dark */ }
     })();
   </script>
   <link rel="stylesheet" href="./styles/main.css" />
 </head>
 <body>
-
+<!-- BEGIN crypto-lab shared header — managed; edit shared-header.html + re-run reapply-header.py
+     Identical on every lab. Self-contained styles. Accents use each demo's own
+     --accent CSS variable (teal #35d6bb fallback). The ONLY per-repo value is the
+     repo name (crypto-lab-bcrypt-forge) in the GitHub link.
+     Source of truth: github.com/systemslibrarian/crypto-lab/shared-header.html -->
+<style>
+  .cl-topbar{
+    display:flex;align-items:center;justify-content:space-between;gap:1rem;
+    padding:.7rem clamp(.9rem,3vw,2rem);
+    background:#0b1512;
+    border-bottom:1px solid color-mix(in srgb, var(--accent, #35d6bb) 22%, transparent);
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    position:sticky;top:0;z-index:1000;
+  }
+  .cl-brand{display:flex;align-items:center;gap:.8rem;text-decoration:none}
+  .cl-badge{
+    flex:0 0 auto;display:grid;place-items:center;width:40px;height:40px;
+    border:1.5px solid var(--accent, #35d6bb);border-radius:10px;
+    color:var(--accent, #35d6bb);font-weight:700;font-size:.95rem;letter-spacing:.05em;
+  }
+  .cl-brand-text{display:flex;flex-direction:column;line-height:1.15}
+  .cl-title{color:#eafff8;font-weight:700;font-size:1.05rem;letter-spacing:.12em}
+  .cl-sub{color:#5e8b80;font-size:.72rem;letter-spacing:.04em}
+  .cl-actions{display:flex;align-items:center;gap:.5rem}
+  .cl-btn{
+    display:inline-flex;align-items:center;gap:.4rem;
+    padding:.5rem .85rem;border-radius:10px;
+    border:1px solid color-mix(in srgb, var(--accent, #35d6bb) 38%, transparent);
+    background:transparent;color:var(--accent, #35d6bb);cursor:pointer;
+    font:inherit;font-size:.78rem;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase;text-decoration:none;transition:background .15s,border-color .15s,color .15s;
+  }
+  .cl-btn:hover{
+    background:color-mix(in srgb, var(--accent, #35d6bb) 14%, transparent);
+    border-color:var(--accent, #35d6bb);color:#eafff8;
+  }
+  .cl-btn svg{width:15px;height:15px}
+  .cl-icon{padding:.5rem .6rem;font-size:.95rem}
+  /* hide each lab's own in-page theme toggle — the bar's toggle replaces it.
+     element stays in the DOM so the lab's theme JS keeps working. */
+  body :is(#theme-toggle,#themeToggle,.theme-toggle,.theme-toggle-btn,[data-theme-toggle]):not(#cl-theme-toggle){display:none!important}
+  @media(max-width:560px){
+    .cl-sub{display:none}
+    .cl-btn span{display:none}
+    .cl-btn svg{margin:0}
+  }
+</style>
+<header class="cl-topbar" role="banner" aria-label="Crypto Lab">
+  <a class="cl-brand" href="https://crypto-lab.systemslibrarian.dev/" aria-label="Crypto Lab home">
+    <span class="cl-badge">CL</span>
+    <span class="cl-brand-text">
+      <span class="cl-title">CRYPTO LAB</span>
+      <span class="cl-sub">systemslibrarian.dev</span>
+    </span>
+  </a>
+  <nav class="cl-actions" aria-label="Site">
+    <a class="cl-btn" href="https://crypto-lab.systemslibrarian.dev/">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      <span>Menu</span>
+    </a>
+    <a class="cl-btn" href="https://github.com/systemslibrarian/crypto-lab-bcrypt-forge" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7 0-.7 0-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.4 11.4 0 0 1 6 0C17.3 5 18.3 5.3 18.3 5.3c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+      <span>GitHub</span>
+    </a>
+    <button class="cl-btn cl-icon" id="cl-theme-toggle" type="button" aria-label="Toggle color theme" title="Toggle theme">☀</button>
+  </nav>
+</header>
+<script>
+  (function () {
+    var t = document.getElementById('cl-theme-toggle');
+    if (!t) return;
+    function cur(){ return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
+    function paint(){ t.textContent = cur() === 'light' ? '☾' : '☀'; }
+    paint();
+    t.addEventListener('click', function () {
+      var next = cur() === 'light' ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('theme', next); } catch (e) {}
+      paint();
+    });
+  })();
+</script>
+<!-- END crypto-lab shared header -->
   <!-- Skip link for keyboard users -->
   <a class="skip-link" href="#main-content">Skip to main content</a>
 
@@ -30,8 +136,7 @@
         <button id="theme-toggle"
                 class="theme-toggle"
                 type="button"
-                aria-label="Switch to light mode"
-                style="position: absolute; top: 0; right: 0;">
+                aria-label="Switch to light mode">
           🌙
         </button>
       </div>
@@ -119,7 +224,7 @@
 
         <section class="panel-section" aria-labelledby="p1-anatomy-heading">
           <h3 id="p1-anatomy-heading" class="section-title">Three-Part Output Anatomy</h3>
-          <div id="p1-anatomy-display" class="anatomy-display" aria-label="Annotated bcrypt hash"></div>
+          <div id="p1-anatomy-display" class="anatomy-display" tabindex="0" role="img" aria-label="Annotated bcrypt hash showing version, cost, salt, and hash segments"></div>
           <div id="p1-anatomy-legend" class="anatomy-legend" role="list" aria-label="Hash field legend"></div>
           <div id="p1-anatomy-arrows" style="font-family: var(--font-mono); font-size: 0.8125rem; color: var(--color-text-3); margin-top: var(--space-2); overflow-x: auto; white-space: nowrap;" aria-hidden="true"></div>
         </section>
@@ -297,13 +402,13 @@
 
           <div class="two-col" style="margin-top: var(--space-4);">
             <div>
-              <h4 style="font-size: 0.875rem; font-weight: 700; color: var(--color-invalid); margin-bottom: var(--space-2);">
+              <h4 style="font-size: 0.875rem; font-weight: 700; color: var(--color-invalid-text); margin-bottom: var(--space-2);">
                 Naive === (variable timing)
               </h4>
               <div id="p4-naive-chart" class="timing-chart" aria-label="Naive comparison timings"></div>
             </div>
             <div>
-              <h4 style="font-size: 0.875rem; font-weight: 700; color: var(--color-valid); margin-bottom: var(--space-2);">
+              <h4 style="font-size: 0.875rem; font-weight: 700; color: var(--color-valid-text); margin-bottom: var(--space-2);">
                 bcrypt.compare (constant time)
               </h4>
               <div id="p4-bcrypt-chart" class="timing-chart" aria-label="bcrypt comparison timings"></div>
@@ -333,7 +438,7 @@
 
         <section class="panel-section" aria-labelledby="p5-table-heading">
           <h3 id="p5-table-heading" class="section-title">Algorithm Comparison</h3>
-          <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
+          <div class="table-scroll" tabindex="0" role="region" aria-label="Password hashing algorithm comparison table, horizontally scrollable">
             <table class="comparison-table" id="p5-table" aria-label="Password hashing algorithm comparison">
               <thead>
                 <tr>
@@ -445,7 +550,7 @@
 
   </main>
 
-  <footer style="text-align:center; padding: 1.5rem; font-size: 0.85rem; opacity: 0.7; margin-top: 2rem;">
+  <footer class="scripture-footer">
     Whether you eat or drink or whatever you do, do it all for the glory of God. — 1 Corinthians 10:31
   </footer>
 

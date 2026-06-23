@@ -1,9 +1,13 @@
 /**
  * exhibits.ts — All six interactive bcrypt exhibits.
- * Uses bcryptjs for real hashing. No simulated output.
+ *
+ * Every CPU-heavy operation (bcrypt hashing/verifying, MD5, PBKDF2) is
+ * delegated to a Web Worker via `cryptoClient`, so the main thread — and the
+ * UI — stays responsive throughout. Hashes are real, never simulated.
  */
 
-import bcrypt from 'bcryptjs';
+import { cryptoClient } from './crypto-client.ts';
+import { parseBcryptHash, isBcryptHash, formatDuration, variance } from './lib.ts';
 
 // ─── Helpers ──────────────────────────────────────────────────────
 
@@ -19,148 +23,50 @@ function escapeHtml(str: string): string {
 
 /** Color-annotate a bcrypt hash into its four parts. */
 function annotateBcryptHash(hash: string): string {
-  // Format: $2b$12$<22-char salt><31-char hash>
-  const match = hash.match(/^(\$2[aby]?\$)(\d{2}\$)(.{22})(.{31})$/);
-  if (!match) return escapeHtml(hash);
+  const parts = parseBcryptHash(hash);
+  if (!parts) return escapeHtml(hash);
   return (
-    `<span class="anatomy-version">${escapeHtml(match[1])}</span>` +
-    `<span class="anatomy-cost">${escapeHtml(match[2])}</span>` +
-    `<span class="anatomy-salt">${escapeHtml(match[3])}</span>` +
-    `<span class="anatomy-hash">${escapeHtml(match[4])}</span>`
+    `<span class="anatomy-version">${escapeHtml(parts.version)}</span>` +
+    `<span class="anatomy-cost">${escapeHtml(parts.cost)}</span>` +
+    `<span class="anatomy-salt">${escapeHtml(parts.salt)}</span>` +
+    `<span class="anatomy-hash">${escapeHtml(parts.hash)}</span>`
   );
 }
 
-/** Real MD5 implementation for educational display in Exhibit 6. */
-function md5(message: string): string {
-  function rotateLeft(x: number, c: number): number {
-    return (x << c) | (x >>> (32 - c));
-  }
-
-  function addUnsigned(a: number, b: number): number {
-    return (a + b) >>> 0;
-  }
-
-  function F(x: number, y: number, z: number): number {
-    return (x & y) | (~x & z);
-  }
-
-  function G(x: number, y: number, z: number): number {
-    return (x & z) | (y & ~z);
-  }
-
-  function H(x: number, y: number, z: number): number {
-    return x ^ y ^ z;
-  }
-
-  function I(x: number, y: number, z: number): number {
-    return y ^ (x | ~z);
-  }
-
-  const S = [
-    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
-    5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
-    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
-    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
-  ];
-
-  const K = new Array<number>(64);
-  for (let i = 0; i < 64; i++) {
-    K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 0x100000000) >>> 0;
-  }
-
-  const encoder = new TextEncoder();
-  const input = encoder.encode(message);
-  const bitLen = input.length * 8;
-
-  const paddedLen = (((input.length + 8) >>> 6) + 1) * 64;
-  const data = new Uint8Array(paddedLen);
-  data.set(input);
-  data[input.length] = 0x80;
-
-  const view = new DataView(data.buffer);
-  view.setUint32(paddedLen - 8, bitLen >>> 0, true);
-  view.setUint32(paddedLen - 4, Math.floor(bitLen / 0x100000000), true);
-
-  let a0 = 0x67452301;
-  let b0 = 0xefcdab89;
-  let c0 = 0x98badcfe;
-  let d0 = 0x10325476;
-
-  for (let offset = 0; offset < paddedLen; offset += 64) {
-    const M = new Array<number>(16);
-    for (let i = 0; i < 16; i++) {
-      M[i] = view.getUint32(offset + i * 4, true);
-    }
-
-    let A = a0;
-    let B = b0;
-    let C = c0;
-    let D = d0;
-
-    for (let i = 0; i < 64; i++) {
-      let f = 0;
-      let g = 0;
-
-      if (i < 16) {
-        f = F(B, C, D);
-        g = i;
-      } else if (i < 32) {
-        f = G(B, C, D);
-        g = (5 * i + 1) % 16;
-      } else if (i < 48) {
-        f = H(B, C, D);
-        g = (3 * i + 5) % 16;
-      } else {
-        f = I(B, C, D);
-        g = (7 * i) % 16;
-      }
-
-      const tmp = D;
-      D = C;
-      C = B;
-      B = addUnsigned(B, rotateLeft(addUnsigned(addUnsigned(A, f), addUnsigned(K[i], M[g])), S[i]));
-      A = tmp;
-    }
-
-    a0 = addUnsigned(a0, A);
-    b0 = addUnsigned(b0, B);
-    c0 = addUnsigned(c0, C);
-    d0 = addUnsigned(d0, D);
-  }
-
-  function toHexLE(n: number): string {
-    return [
-      n & 0xff,
-      (n >>> 8) & 0xff,
-      (n >>> 16) & 0xff,
-      (n >>> 24) & 0xff,
-    ].map(v => v.toString(16).padStart(2, '0')).join('');
-  }
-
-  return toHexLE(a0) + toHexLE(b0) + toHexLE(c0) + toHexLE(d0);
-}
-
-/** Copy text to clipboard. */
+/** Copy text to clipboard, with a graceful fallback for older browsers. */
 async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
+  const flash = () => {
+    const orig = btn.dataset.label ?? btn.textContent ?? 'Copy';
+    btn.dataset.label = orig;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = btn.dataset.label ?? orig; }, 1500);
+  };
   try {
     await navigator.clipboard.writeText(text);
-    const orig = btn.textContent;
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = orig; }, 1500);
+    flash();
   } catch {
-    // Fallback
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.position = 'fixed';
     ta.style.opacity = '0';
     document.body.appendChild(ta);
     ta.select();
-    document.execCommand('copy');
+    try { document.execCommand('copy'); } catch { /* nothing more we can do */ }
     document.body.removeChild(ta);
-    const orig = btn.textContent;
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = orig; }, 1500);
+    flash();
   }
+}
+
+/** Toggle a password input's visibility and keep the button label in sync. */
+function wirePasswordToggle(input: HTMLInputElement, toggle: HTMLButtonElement | null): void {
+  if (!toggle) return;
+  toggle.addEventListener('click', () => {
+    const hidden = input.type === 'password';
+    input.type = hidden ? 'text' : 'password';
+    toggle.textContent = hidden ? '🙈' : '👁';
+    toggle.setAttribute('aria-label', hidden ? 'Hide password' : 'Show password');
+    toggle.setAttribute('aria-pressed', hidden ? 'true' : 'false');
+  });
 }
 
 // Store benchmark results for cross-exhibit use (Exhibit 6 uses Exhibit 3 data)
@@ -176,28 +82,28 @@ export function initExhibit1(): void {
   const arrows = $('p1-anatomy-arrows');
   if (!display || !legend || !arrows) return;
 
-  // Generate a real bcrypt hash for the example
-  const salt = bcrypt.genSaltSync(12);
-  const hash = bcrypt.hashSync('ExamplePassword123', salt);
+  display.innerHTML = '<span class="spinner"></span> Generating a real bcrypt hash…';
 
-  display.innerHTML = annotateBcryptHash(hash);
+  cryptoClient.hash('ExamplePassword123', 12).then(({ hash }) => {
+    display.innerHTML = annotateBcryptHash(hash);
 
-  legend.innerHTML = [
-    { cls: 'anatomy-version', label: 'Version ($2b$)' },
-    { cls: 'anatomy-cost', label: 'Cost factor' },
-    { cls: 'anatomy-salt', label: 'Salt (22 chars)' },
-    { cls: 'anatomy-hash', label: 'Hash (31 chars)' },
-  ].map(item =>
-    `<div class="anatomy-legend__item" role="listitem">` +
-    `<span class="anatomy-legend__dot" style="background: var(--color-${item.cls.replace('anatomy-', '')})"></span>` +
-    `<span>${item.label}</span></div>`
-  ).join('');
+    legend.innerHTML = [
+      { cls: 'version', label: 'Version ($2b$)' },
+      { cls: 'cost', label: 'Cost factor' },
+      { cls: 'salt', label: 'Salt (22 chars)' },
+      { cls: 'hash', label: 'Hash (31 chars)' },
+    ].map(item =>
+      `<div class="anatomy-legend__item" role="listitem">` +
+      `<span class="anatomy-legend__dot" style="background: var(--color-${item.cls})"></span>` +
+      `<span>${item.label}</span></div>`,
+    ).join('');
 
-  arrows.innerHTML =
-    '<span style="color:var(--color-version)"> ↑  </span>' +
-    '<span style="color:var(--color-cost)"> ↑ </span>' +
-    '<span style="color:var(--color-salt)">←———— 22 chars ————→</span>' +
-    '<span style="color:var(--color-hash)">←————————— 31 chars —————————→</span>';
+    arrows.innerHTML =
+      '<span style="color:var(--color-version)"> ↑  </span>' +
+      '<span style="color:var(--color-cost)"> ↑ </span>' +
+      '<span style="color:var(--color-salt)">←———— 22 chars ————→</span>' +
+      '<span style="color:var(--color-hash)">←————————— 31 chars —————————→</span>';
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -217,21 +123,12 @@ export function initExhibit2(): void {
 
   if (!passwordInput || !costSlider || !hashBtn || !resultEl) return;
 
-  // Password show/hide toggle
-  if (passwordToggle) {
-    passwordToggle.addEventListener('click', () => {
-      const isPassword = passwordInput.type === 'password';
-      passwordInput.type = isPassword ? 'text' : 'password';
-      passwordToggle.textContent = isPassword ? '🙈' : '👁';
-      passwordToggle.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
-    });
-  }
+  wirePasswordToggle(passwordInput, passwordToggle);
 
-  // Cost slider update
   const estimateTimes: Record<number, string> = {
     4: '~1 ms', 5: '~2 ms', 6: '~4 ms', 7: '~8 ms',
-    8: '~15 ms', 9: '~30 ms', 10: '~100 ms', 11: '~200 ms',
-    12: '~400 ms', 13: '~800 ms', 14: '~1.6 s',
+    8: '~15 ms', 9: '~30 ms', 10: '~60 ms', 11: '~120 ms',
+    12: '~250 ms', 13: '~500 ms', 14: '~1 s',
   };
 
   costSlider.addEventListener('input', () => {
@@ -243,57 +140,49 @@ export function initExhibit2(): void {
     }
   });
 
-  // Hash button
   hashBtn.addEventListener('click', async () => {
     const password = passwordInput.value;
     const cost = parseInt(costSlider.value, 10);
 
     if (!password) {
-      resultEl.innerHTML = '<span style="color: var(--color-invalid)">Please enter a password.</span>';
+      resultEl.innerHTML = '<span style="color: var(--color-invalid-text)">Please enter a password.</span>';
       return;
     }
 
     hashBtn.disabled = true;
     hashBtn.innerHTML = '<span class="spinner"></span> Hashing…';
     resultEl.innerHTML = '<span class="spinner"></span> Computing bcrypt hash…';
+    if (timingEl) timingEl.textContent = '';
 
-    // Use setTimeout to let the UI update before blocking
-    await new Promise(r => setTimeout(r, 50));
+    try {
+      const { hash, timeMs } = await cryptoClient.hash(password, cost);
 
-    const t0 = performance.now();
-    const salt = bcrypt.genSaltSync(cost);
-    const hash = bcrypt.hashSync(password, salt);
-    const elapsed = performance.now() - t0;
+      resultEl.innerHTML =
+        `<button class="copy-btn" id="p2-copy-btn" type="button" aria-label="Copy hash to clipboard">Copy</button>` +
+        annotateBcryptHash(hash);
 
-    // Color-annotated result with copy button
-    resultEl.innerHTML =
-      `<button class="copy-btn" id="p2-copy-btn" type="button" aria-label="Copy hash to clipboard">Copy</button>` +
-      annotateBcryptHash(hash);
+      const copyBtn = $('p2-copy-btn') as HTMLButtonElement | null;
+      if (copyBtn) copyBtn.addEventListener('click', () => copyToClipboard(hash, copyBtn));
 
-    const copyBtn = $('p2-copy-btn') as HTMLButtonElement | null;
-    if (copyBtn) {
-      copyBtn.addEventListener('click', () => copyToClipboard(hash, copyBtn));
+      if (timingEl) timingEl.textContent = `Computed in ${timeMs.toFixed(1)} ms`;
+
+      if (costBarEl) {
+        const ratio = 2 ** (cost - 10);
+        const barWidth = Math.min(100, Math.max(3, ratio * 20));
+        const ratioLabel = ratio >= 1 ? `${ratio}×` : `1/${Math.round(1 / ratio)}×`;
+        costBarEl.innerHTML =
+          `<div style="font-size: 0.8125rem; color: var(--color-text-3); margin-bottom: var(--space-1);">` +
+          `Relative to cost 10 (baseline): <strong style="color: var(--color-text);">${ratioLabel}</strong></div>` +
+          `<div class="bar-track"><div class="bar-fill ${cost < 10 ? 'bar-fill--danger' : 'bar-fill--safe'}" ` +
+          `style="width: ${barWidth}%"></div></div>`;
+      }
+    } catch (err) {
+      resultEl.innerHTML =
+        `<span style="color: var(--color-invalid-text)">Hashing failed: ${escapeHtml(String(err))}</span>`;
+    } finally {
+      hashBtn.disabled = false;
+      hashBtn.textContent = 'Hash It';
     }
-
-    // Timing
-    if (timingEl) {
-      timingEl.textContent = `Computed in ${elapsed.toFixed(1)} ms`;
-    }
-
-    // Relative cost bar
-    if (costBarEl) {
-      const baseline = 10;
-      const ratio = Math.pow(2, cost - baseline);
-      const barWidth = Math.min(100, Math.max(3, ratio * 20));
-      costBarEl.innerHTML =
-        `<div style="font-size: 0.8125rem; color: var(--color-text-3); margin-bottom: var(--space-1);">` +
-        `Relative to cost 10 (baseline): <strong style="color: var(--color-text);">${ratio}×</strong></div>` +
-        `<div class="bar-track"><div class="bar-fill ${cost < 10 ? 'bar-fill--danger' : 'bar-fill--safe'}" ` +
-        `style="width: ${barWidth}%"></div></div>`;
-    }
-
-    hashBtn.disabled = false;
-    hashBtn.textContent = 'Hash It';
   });
 }
 
@@ -312,8 +201,8 @@ export function initExhibit3(): void {
   runBtn.addEventListener('click', async () => {
     runBtn.disabled = true;
     runBtn.innerHTML = '<span class="spinner"></span> Running…';
-    if (statusEl) statusEl.textContent = 'Running sequential benchmark…';
     chartEl.innerHTML = '';
+    if (crackingEl) crackingEl.innerHTML = '';
 
     benchmarkResults = [];
     const password = 'BenchmarkPassword2024!';
@@ -322,36 +211,22 @@ export function initExhibit3(): void {
 
     for (let cost = 8; cost <= 14; cost++) {
       if (statusEl) statusEl.textContent = `Hashing at cost ${cost}…`;
-
-      // Let UI update
-      await new Promise(r => setTimeout(r, 30));
-
-      const t0 = performance.now();
-      const salt = bcrypt.genSaltSync(cost);
-      bcrypt.hashSync(password, salt);
-      const elapsed = performance.now() - t0;
-
-      if (cost === 8) baseTime = elapsed;
-      results.push({ cost, timeMs: elapsed });
+      const { timeMs } = await cryptoClient.hash(password, cost);
+      if (cost === 8) baseTime = timeMs;
+      results.push({ cost, timeMs });
     }
 
     benchmarkResults = results;
     const maxTime = Math.max(...results.map(r => r.timeMs));
 
-    // Render bar chart
-    let chartHtml = '';
-    // Danger zone label
-    chartHtml += '<div class="zone-label zone-label--danger">⚠ Danger zone (cost &lt; 10)</div>';
-
+    let chartHtml = '<div class="zone-label zone-label--danger">⚠ Danger zone (cost &lt; 10)</div>';
     for (const r of results) {
       const pct = (r.timeMs / maxTime) * 100;
       const multiplier = (r.timeMs / baseTime).toFixed(1);
       const isSafe = r.cost >= 10;
-
       if (r.cost === 10) {
         chartHtml += '<div class="zone-label zone-label--safe">✓ Safe zone (cost ≥ 10)</div>';
       }
-
       chartHtml +=
         `<div class="bar-row">` +
         `<span class="bar-label">${r.cost}</span>` +
@@ -361,38 +236,33 @@ export function initExhibit3(): void {
         `<span class="bar-multiplier">${multiplier}×</span>` +
         `</div>`;
     }
-
     chartEl.innerHTML = chartHtml;
 
-    // Cracking time estimates
     if (crackingEl) {
-      const attackerRate = 1_000_000; // 1M hash/sec baseline for MD5
       let crackHtml =
         '<div style="margin-top: var(--space-4); padding: var(--space-4); background: var(--color-surface); ' +
         'border: 1px solid var(--color-border); border-radius: var(--radius-md);">' +
         '<div style="font-weight: 700; color: var(--color-text); margin-bottom: var(--space-3);">' +
-        'Estimated cracking time (100,000-word dictionary)</div>';
+        'Single-GPU brute-force of one password (8-char lowercase + digit, ~2.8 trillion candidates)</div>';
 
+      // A single high-end GPU does the work you just measured, but massively
+      // parallel. Assume ~10,000× your single-thread rate as a rough proxy.
+      const gpuParallelism = 10_000;
       for (const r of results) {
-        // At cost N, bcrypt does 2^N iterations. hashRate = 1 / (r.timeMs/1000)
-        const hashesPerSec = 1000 / r.timeMs;
-        const dictionarySize = 100_000;
-        const totalSeconds = dictionarySize / hashesPerSec;
-        let timeStr: string;
-        if (totalSeconds < 60) timeStr = `${totalSeconds.toFixed(1)} seconds`;
-        else if (totalSeconds < 3600) timeStr = `${(totalSeconds / 60).toFixed(1)} minutes`;
-        else if (totalSeconds < 86400) timeStr = `${(totalSeconds / 3600).toFixed(1)} hours`;
-        else timeStr = `${(totalSeconds / 86400).toFixed(1)} days`;
-
+        const yourHashesPerSec = 1000 / r.timeMs;
+        const attackerHashesPerSec = yourHashesPerSec * gpuParallelism;
+        const keyspace = 36 ** 8 / 2; // expected attempts = half the keyspace
+        const seconds = keyspace / attackerHashesPerSec;
         crackHtml +=
           `<div style="display: flex; justify-content: space-between; padding: var(--space-1) 0; ` +
           `border-bottom: 1px solid var(--color-border); font-size: 0.8125rem;">` +
           `<span style="color: var(--color-text-2);">Cost ${r.cost}</span>` +
           `<span style="font-family: var(--font-mono); color: ${r.cost >= 10 ? 'var(--color-valid-text)' : 'var(--color-invalid-text)'};">` +
-          `${timeStr}</span></div>`;
+          `${formatDuration(seconds)}</span></div>`;
       }
-
-      crackHtml += '</div>';
+      crackHtml +=
+        '<div style="font-size: 0.75rem; color: var(--color-text-3); margin-top: var(--space-2);">' +
+        'Order-of-magnitude estimate. Each +1 in cost doubles every figure above.</div></div>';
       crackingEl.innerHTML = crackHtml;
     }
 
@@ -406,7 +276,6 @@ export function initExhibit3(): void {
 // EXHIBIT 4 — Verify & Timing-Safe Comparison
 // ═══════════════════════════════════════════════════════════════════
 
-// Pre-computed example pair for "load correct"
 const EXAMPLE_PASSWORD = 'correcthorsebatterystaple';
 let exampleHash = '';
 
@@ -425,21 +294,17 @@ export function initExhibit4(): void {
 
   if (!passwordInput || !hashInput || !verifyBtn || !resultEl) return;
 
-  // Generate example hash on init
-  const salt = bcrypt.genSaltSync(10);
-  exampleHash = bcrypt.hashSync(EXAMPLE_PASSWORD, salt);
+  // Generate the example hash off-thread; disable example buttons until ready.
+  if (correctBtn) correctBtn.disabled = true;
+  if (wrongBtn) wrongBtn.disabled = true;
+  cryptoClient.hash(EXAMPLE_PASSWORD, 10).then(({ hash }) => {
+    exampleHash = hash;
+    if (correctBtn) correctBtn.disabled = false;
+    if (wrongBtn) wrongBtn.disabled = false;
+  });
 
-  // Password toggle
-  if (passwordToggle) {
-    passwordToggle.addEventListener('click', () => {
-      const isPassword = passwordInput.type === 'password';
-      passwordInput.type = isPassword ? 'text' : 'password';
-      passwordToggle.textContent = isPassword ? '🙈' : '👁';
-      passwordToggle.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
-    });
-  }
+  wirePasswordToggle(passwordInput, passwordToggle);
 
-  // Load example pairs
   if (correctBtn) {
     correctBtn.addEventListener('click', () => {
       passwordInput.value = EXAMPLE_PASSWORD;
@@ -453,7 +318,6 @@ export function initExhibit4(): void {
     });
   }
 
-  // Verify
   verifyBtn.addEventListener('click', async () => {
     const password = passwordInput.value;
     const hash = hashInput.value.trim();
@@ -462,8 +326,7 @@ export function initExhibit4(): void {
       resultEl.innerHTML = '<div class="status-display">Please enter both a password and a hash.</div>';
       return;
     }
-
-    if (!/^\$2[aby]?\$\d{2}\$.{53}$/.test(hash)) {
+    if (!isBcryptHash(hash)) {
       resultEl.innerHTML =
         '<div class="verify-result verify-result--no-match">' +
         '⚠ Invalid bcrypt hash format. Generate one in Exhibit 2 or click "Load Correct Pair".</div>';
@@ -473,29 +336,23 @@ export function initExhibit4(): void {
     verifyBtn.disabled = true;
     verifyBtn.innerHTML = '<span class="spinner"></span> Verifying…';
 
-    await new Promise(r => setTimeout(r, 30));
-
-    const t0 = performance.now();
-    const match = bcrypt.compareSync(password, hash);
-    const elapsed = performance.now() - t0;
-
-    if (match) {
+    try {
+      const { match, timeMs } = await cryptoClient.compare(password, hash);
+      resultEl.innerHTML = match
+        ? `<div class="verify-result verify-result--match">✓ Match — verified in ${timeMs.toFixed(1)} ms</div>`
+        : `<div class="verify-result verify-result--no-match">✗ No match — checked in ${timeMs.toFixed(1)} ms</div>`;
+    } catch (err) {
       resultEl.innerHTML =
-        `<div class="verify-result verify-result--match">` +
-        `✓ Match — verified in ${elapsed.toFixed(1)} ms</div>`;
-    } else {
-      resultEl.innerHTML =
-        `<div class="verify-result verify-result--no-match">` +
-        `✗ No match — checked in ${elapsed.toFixed(1)} ms</div>`;
+        `<div class="verify-result verify-result--no-match">Verify failed: ${escapeHtml(String(err))}</div>`;
+    } finally {
+      verifyBtn.disabled = false;
+      verifyBtn.textContent = 'Verify';
     }
-
-    verifyBtn.disabled = false;
-    verifyBtn.textContent = 'Verify';
   });
 
-  // Timing attack visualizer
   if (timingBtn && naiveChart && bcryptChart) {
     timingBtn.addEventListener('click', async () => {
+      if (!exampleHash) return;
       timingBtn.disabled = true;
       timingBtn.innerHTML = '<span class="spinner"></span> Running…';
 
@@ -503,89 +360,65 @@ export function initExhibit4(): void {
       const naiveTimings: number[] = [];
       const bcryptTimings: number[] = [];
 
-      // Generate 10 test strings with varying prefix match lengths
+      // 10 probes that match progressively more of the hash prefix.
       const testStrings: string[] = [];
       for (let i = 0; i < 10; i++) {
-        // Create strings that match more and more characters of the hash
         const prefix = target.substring(0, i * 6);
-        const suffix = 'x'.repeat(target.length - prefix.length);
-        testStrings.push(prefix + suffix);
+        testStrings.push(prefix + 'x'.repeat(target.length - prefix.length));
       }
 
       for (let i = 0; i < 10; i++) {
-        // Naive === comparison (simulate variable timing based on match position)
+        // Naive ===: an *illustrative* byte-by-byte compare whose duration
+        // grows with the matching-prefix length — the leak constant-time
+        // comparison is designed to prevent.
         const testStr = testStrings[i];
         const t0 = performance.now();
-        // Simulate char-by-char comparison with measurable delay
-        let matchCount = 0;
         for (let j = 0; j < testStr.length; j++) {
-          if (testStr[j] === target[j]) {
-            matchCount++;
-            // Tiny busy-wait to simulate measurable timing difference
-            const end = performance.now() + 0.005;
-            while (performance.now() < end) { /* busy wait */ }
-          } else {
-            break;
-          }
+          if (testStr[j] !== target[j]) break;
+          const end = performance.now() + 0.005;
+          while (performance.now() < end) { /* busy wait — exaggerate the leak */ }
         }
-        const naiveTime = performance.now() - t0;
-        naiveTimings.push(naiveTime);
+        naiveTimings.push(performance.now() - t0);
 
-        // bcrypt compare (constant time)
-        await new Promise(r => setTimeout(r, 10));
-        const t1 = performance.now();
-        bcrypt.compareSync(EXAMPLE_PASSWORD, target);
-        const bcryptTime = performance.now() - t1;
-        bcryptTimings.push(bcryptTime);
+        // bcrypt compare runs off-thread and is timed inside the worker.
+        const { timeMs } = await cryptoClient.compare(EXAMPLE_PASSWORD, target);
+        bcryptTimings.push(timeMs);
       }
 
-      // Render naive chart
-      const maxNaive = Math.max(...naiveTimings);
-      const maxBcrypt = Math.max(...bcryptTimings);
-      const globalMax = Math.max(maxNaive, maxBcrypt, 0.01);
+      const globalMaxNaive = Math.max(...naiveTimings, 0.01);
+      const globalMaxBcrypt = Math.max(...bcryptTimings, 0.01);
 
       naiveChart.innerHTML = naiveTimings.map((t, i) =>
         `<div class="timing-row">` +
         `<span class="timing-label">#${i + 1}</span>` +
         `<div class="bar-track" style="height: 16px;">` +
-        `<div class="timing-bar timing-bar--naive" style="width: ${(t / globalMax) * 100}%"></div>` +
-        `</div>` +
-        `<span class="timing-label">${t.toFixed(3)}ms</span>` +
-        `</div>`
+        `<div class="timing-bar timing-bar--naive" style="width: ${(t / globalMaxNaive) * 100}%"></div></div>` +
+        `<span class="timing-label">${t.toFixed(3)}ms</span></div>`,
       ).join('');
 
       bcryptChart.innerHTML = bcryptTimings.map((t, i) =>
         `<div class="timing-row">` +
         `<span class="timing-label">#${i + 1}</span>` +
         `<div class="bar-track" style="height: 16px;">` +
-        `<div class="timing-bar timing-bar--bcrypt" style="width: ${(t / globalMax) * 100}%"></div>` +
-        `</div>` +
-        `<span class="timing-label">${t.toFixed(1)}ms</span>` +
-        `</div>`
+        `<div class="timing-bar timing-bar--bcrypt" style="width: ${(t / globalMaxBcrypt) * 100}%"></div></div>` +
+        `<span class="timing-label">${t.toFixed(1)}ms</span></div>`,
       ).join('');
 
-      // Stats
       if (timingStats) {
-        const naiveVariance = variance(naiveTimings);
-        const bcryptVariance = variance(bcryptTimings);
         timingStats.innerHTML =
           `<div class="status-display">` +
           `<strong>Timing variance:</strong> ` +
-          `Naive: <span style="color: var(--color-invalid-text);">${naiveVariance.toFixed(4)} ms²</span> — ` +
-          `bcrypt: <span style="color: var(--color-valid-text);">${bcryptVariance.toFixed(4)} ms²</span><br>` +
+          `Naive: <span style="color: var(--color-invalid-text);">${variance(naiveTimings).toFixed(4)} ms²</span> — ` +
+          `bcrypt: <span style="color: var(--color-valid-text);">${variance(bcryptTimings).toFixed(4)} ms²</span><br>` +
           `<span style="font-size: 0.8125rem; color: var(--color-text-3);">` +
-          `Lower variance = less information leaked. bcrypt's constant-time compare reveals nothing.</span></div>`;
+          `The naive bars are an exaggerated illustration; the leak is real but measured in nanoseconds. ` +
+          `bcrypt's constant-time compare reveals nothing about where a mismatch occurs.</span></div>`;
       }
 
       timingBtn.disabled = false;
       timingBtn.textContent = 'Run Timing Comparison';
     });
   }
-}
-
-function variance(arr: number[]): number {
-  const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
-  return arr.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / arr.length;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -643,16 +476,15 @@ export function initExhibit5(): void {
 
   if (!tbody) return;
 
-  // Build table rows
+  const bool = (v: boolean | 'Partial') =>
+    v === true ? '✓' : v === 'Partial' ? 'Partial' : '✗';
+
   let html = '';
   for (const algo of algorithms) {
-    const bool = (v: boolean | 'Partial') =>
-      v === true ? '✓' : v === 'Partial' ? 'Partial' : '✗';
-
     html +=
       `<tr data-expandable data-algo="${escapeHtml(algo.name)}" ` +
       `role="button" tabindex="0" aria-expanded="false" ` +
-      `aria-label="${escapeHtml(algo.name)} — click to expand details">` +
+      `aria-label="${escapeHtml(algo.name)} — activate to expand details">` +
       `<td style="text-align: left; font-weight: 600;"><span class="expand-icon" aria-hidden="true">▶</span> ${escapeHtml(algo.name)}</td>` +
       `<td>${algo.year}</td>` +
       `<td>${bool(algo.adaptive)}</td>` +
@@ -666,17 +498,14 @@ export function initExhibit5(): void {
   }
   tbody.innerHTML = html;
 
-  // Expand/collapse click handlers
-  const expandableRows = tbody.querySelectorAll<HTMLTableRowElement>('[data-expandable]');
-  expandableRows.forEach(row => {
+  tbody.querySelectorAll<HTMLTableRowElement>('[data-expandable]').forEach(row => {
     const handler = () => {
       const expandRow = row.nextElementSibling as HTMLTableRowElement | null;
       if (!expandRow) return;
       const isOpen = !expandRow.hidden;
       expandRow.hidden = isOpen;
       row.setAttribute('aria-expanded', String(!isOpen));
-      const icon = row.querySelector('.expand-icon');
-      if (icon) icon.classList.toggle('expand-icon--open', !isOpen);
+      row.querySelector('.expand-icon')?.classList.toggle('expand-icon--open', !isOpen);
     };
     row.addEventListener('click', handler);
     row.addEventListener('keydown', (e) => {
@@ -687,54 +516,33 @@ export function initExhibit5(): void {
     });
   });
 
-  // Live timing race: bcrypt vs PBKDF2
   if (raceBtn && raceResult) {
     raceBtn.addEventListener('click', async () => {
       raceBtn.disabled = true;
       raceBtn.innerHTML = '<span class="spinner"></span> Running…';
       raceResult.innerHTML = '<span class="spinner"></span> Hashing with bcrypt (cost 12)…';
 
-      await new Promise(r => setTimeout(r, 30));
+      try {
+        const { timeMs: bcryptTime } = await cryptoClient.hash('TimingComparisonTest', 12);
 
-      // bcrypt
-      const tb0 = performance.now();
-      const salt = bcrypt.genSaltSync(12);
-      bcrypt.hashSync('TimingComparisonTest', salt);
-      const bcryptTime = performance.now() - tb0;
+        raceResult.innerHTML = '<span class="spinner"></span> Deriving with PBKDF2 (100k rounds)…';
+        const { timeMs: pbkdf2Time } = await cryptoClient.pbkdf2('TimingComparisonTest', 100_000);
 
-      raceResult.innerHTML = '<span class="spinner"></span> Hashing with PBKDF2 (100k rounds)…';
-      await new Promise(r => setTimeout(r, 30));
-
-      // PBKDF2 via WebCrypto
-      const tp0 = performance.now();
-      const encoder = new TextEncoder();
-      const keyMaterial = await crypto.subtle.importKey(
-        'raw', encoder.encode('TimingComparisonTest'), 'PBKDF2', false, ['deriveBits']
-      );
-      await crypto.subtle.deriveBits(
-        {
-          name: 'PBKDF2',
-          salt: encoder.encode('random-salt-value-16'),
-          iterations: 100000,
-          hash: 'SHA-256',
-        },
-        keyMaterial,
-        256
-      );
-      const pbkdf2Time = performance.now() - tp0;
-
-      raceResult.innerHTML =
-        `<div class="status-display">` +
-        `<div style="display: flex; justify-content: space-between; margin-bottom: var(--space-2);">` +
-        `<span style="font-weight: 700;">bcrypt (cost 12):</span>` +
-        `<span style="font-family: var(--font-mono); color: var(--color-primary);">${bcryptTime.toFixed(1)} ms</span></div>` +
-        `<div style="display: flex; justify-content: space-between;">` +
-        `<span style="font-weight: 700;">PBKDF2 (100k rounds):</span>` +
-        `<span style="font-family: var(--font-mono); color: var(--color-warning);">${pbkdf2Time.toFixed(1)} ms</span></div>` +
-        `</div>`;
-
-      raceBtn.disabled = false;
-      raceBtn.textContent = 'Run Comparison';
+        raceResult.innerHTML =
+          `<div class="status-display">` +
+          `<div style="display: flex; justify-content: space-between; margin-bottom: var(--space-2);">` +
+          `<span style="font-weight: 700;">bcrypt (cost 12):</span>` +
+          `<span style="font-family: var(--font-mono); color: var(--color-primary);">${bcryptTime.toFixed(1)} ms</span></div>` +
+          `<div style="display: flex; justify-content: space-between;">` +
+          `<span style="font-weight: 700;">PBKDF2 (100k rounds):</span>` +
+          `<span style="font-family: var(--font-mono); color: var(--color-warning-text);">${pbkdf2Time.toFixed(1)} ms</span></div>` +
+          `</div>`;
+      } catch (err) {
+        raceResult.innerHTML = `<div class="status-display">Comparison failed: ${escapeHtml(String(err))}</div>`;
+      } finally {
+        raceBtn.disabled = false;
+        raceBtn.textContent = 'Run Comparison';
+      }
     });
   }
 }
@@ -746,8 +554,6 @@ export function initExhibit5(): void {
 interface DemoUser {
   username: string;
   password: string;
-  md5Hash?: string;
-  bcryptHash?: string;
 }
 
 const DEMO_USERS: DemoUser[] = [
@@ -776,27 +582,22 @@ export function initExhibit6(): void {
   initScenarioC(cContainer, cBreachBtn);
 }
 
-async function initScenarioA(
-  container: HTMLElement,
-  breachBtn: HTMLButtonElement | null,
-): Promise<void> {
-  // Build table with hidden passwords
-  let html = '<table class="user-table" aria-label="Plaintext storage database">' +
+function initScenarioA(container: HTMLElement, breachBtn: HTMLButtonElement | null): void {
+  let html = '<div class="table-scroll" tabindex="0" role="region" aria-label="Plaintext password database (scrollable)">' +
+    '<table class="user-table" aria-label="Plaintext storage database">' +
     '<thead><tr><th scope="col">User</th><th scope="col">Stored Password</th></tr></thead><tbody>';
   for (const u of DEMO_USERS) {
     html += `<tr><td>${escapeHtml(u.username)}</td>` +
       `<td class="p6a-pw" data-pw="${escapeHtml(u.password)}">••••••••</td></tr>`;
   }
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   container.innerHTML = html;
 
   if (breachBtn) {
     breachBtn.addEventListener('click', () => {
-      const cells = container.querySelectorAll('.p6a-pw');
-      cells.forEach(cell => {
-        const el = cell as HTMLElement;
-        el.textContent = el.dataset.pw ?? '';
-        el.classList.add('revealed');
+      container.querySelectorAll<HTMLElement>('.p6a-pw').forEach(cell => {
+        cell.textContent = cell.dataset.pw ?? '';
+        cell.classList.add('revealed');
       });
       breachBtn.disabled = true;
       breachBtn.textContent = 'Breached!';
@@ -806,35 +607,29 @@ async function initScenarioA(
   }
 }
 
-async function initScenarioB(
-  container: HTMLElement,
-  breachBtn: HTMLButtonElement | null,
-): Promise<void> {
-  // Precompute MD5 hashes
-  const usersWithMd5: (DemoUser & { md5Hash: string })[] = [];
-  for (const u of DEMO_USERS) {
-    const hash = md5(u.password);
-    usersWithMd5.push({ ...u, md5Hash: hash });
-  }
+async function initScenarioB(container: HTMLElement, breachBtn: HTMLButtonElement | null): Promise<void> {
+  const usersWithMd5 = await Promise.all(
+    DEMO_USERS.map(async u => ({ ...u, md5Hash: await cryptoClient.md5(u.password) })),
+  );
 
-  let html = '<table class="user-table" aria-label="MD5 hash storage database">' +
+  let html = '<div class="table-scroll" tabindex="0" role="region" aria-label="MD5 hash database (scrollable)">' +
+    '<table class="user-table" aria-label="MD5 hash storage database">' +
     '<thead><tr><th scope="col">User</th><th scope="col">MD5 Hash</th><th scope="col">Cracked?</th></tr></thead><tbody>';
   for (const u of usersWithMd5) {
     html += `<tr><td>${escapeHtml(u.username)}</td>` +
       `<td>${escapeHtml(u.md5Hash)}</td>` +
       `<td class="p6b-crack" data-pw="${escapeHtml(u.password)}">—</td></tr>`;
   }
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   container.innerHTML = html;
 
-  // Note duplicate hashes
   const hashCounts = new Map<string, number>();
   usersWithMd5.forEach(u => hashCounts.set(u.md5Hash, (hashCounts.get(u.md5Hash) ?? 0) + 1));
-  const duplicates = [...hashCounts.entries()].filter(([, c]) => c > 1);
+  const duplicates = [...hashCounts.values()].filter(c => c > 1);
   if (duplicates.length > 0) {
-    container.innerHTML +=
+    container.insertAdjacentHTML('beforeend',
       `<div style="font-size: 0.8125rem; color: var(--color-warning-text); margin-top: var(--space-2);">` +
-      `⚠ Notice: ${duplicates.length} hash(es) appear more than once — identical passwords produce identical unsalted hashes.</div>`;
+      `⚠ Notice: ${duplicates.length} hash(es) appear more than once — identical passwords produce identical unsalted hashes.</div>`);
   }
 
   if (breachBtn) {
@@ -842,12 +637,11 @@ async function initScenarioB(
       breachBtn.disabled = true;
       breachBtn.innerHTML = '<span class="spinner"></span> Looking up…';
 
-      const cells = container.querySelectorAll('.p6b-crack');
-      for (let i = 0; i < cells.length; i++) {
-        await new Promise(r => setTimeout(r, 150 + Math.random() * 200));
-        const el = cells[i] as HTMLElement;
-        el.textContent = el.dataset.pw ?? '';
-        el.classList.add('revealed');
+      const cells = container.querySelectorAll<HTMLElement>('.p6b-crack');
+      for (const cell of cells) {
+        await new Promise(r => setTimeout(r, 180));
+        cell.textContent = cell.dataset.pw ?? '';
+        cell.classList.add('revealed');
       }
 
       breachBtn.textContent = 'All Cracked!';
@@ -857,34 +651,30 @@ async function initScenarioB(
   }
 }
 
-async function initScenarioC(
-  container: HTMLElement,
-  breachBtn: HTMLButtonElement | null,
-): Promise<void> {
-  // Precompute bcrypt hashes at cost 12
-  const usersWithBcrypt: (DemoUser & { bcryptHash: string })[] = [];
-
-  // Real cost-12 bcrypt hashes.
-  for (const u of DEMO_USERS) {
-    const salt = bcrypt.genSaltSync(12);
-    const hash = bcrypt.hashSync(u.password, salt);
-    usersWithBcrypt.push({ ...u, bcryptHash: hash });
-  }
-
-  let html = '<table class="user-table" aria-label="bcrypt hash storage database">' +
+async function initScenarioC(container: HTMLElement, breachBtn: HTMLButtonElement | null): Promise<void> {
+  // Render the table immediately with placeholders, then fill each hash in as
+  // the worker produces it — the visible drip-feed *is* the lesson: cost-12
+  // bcrypt is slow even to generate.
+  let html = '<div class="table-scroll" tabindex="0" role="region" aria-label="bcrypt hash database (scrollable)">' +
+    '<table class="user-table" aria-label="bcrypt hash storage database">' +
     '<thead><tr><th scope="col">User</th><th scope="col">bcrypt Hash</th><th scope="col">Cracked?</th></tr></thead><tbody>';
-  for (const u of usersWithBcrypt) {
+  for (const u of DEMO_USERS) {
     html += `<tr><td>${escapeHtml(u.username)}</td>` +
-      `<td>${escapeHtml(u.bcryptHash)}</td>` +
+      `<td class="p6c-hash" id="p6c-hash-${escapeHtml(u.username)}"><span class="spinner"></span> hashing…</td>` +
       `<td class="p6c-crack safe">Protected</td></tr>`;
   }
-  html += '</tbody></table>';
-
-  // Note each hash is unique even for identical passwords
+  html += '</tbody></table></div>';
   container.innerHTML = html;
-  container.innerHTML +=
+
+  for (const u of DEMO_USERS) {
+    const { hash } = await cryptoClient.hash(u.password, 12);
+    const cell = $(`p6c-hash-${u.username}`);
+    if (cell) cell.textContent = hash;
+  }
+
+  container.insertAdjacentHTML('beforeend',
     `<div style="font-size: 0.8125rem; color: var(--color-valid-text); margin-top: var(--space-2);">` +
-    `✓ Notice: alice and eve share the same password, but their bcrypt hashes are completely different — each gets a unique salt.</div>`;
+    `✓ Notice: alice and eve share the same password, but their bcrypt hashes are completely different — each gets a unique salt.</div>`);
 
   if (breachBtn) {
     breachBtn.addEventListener('click', () => {
@@ -896,47 +686,32 @@ async function initScenarioC(
       const textEl = $('p6c-progress-text');
       if (progressEl) progressEl.style.display = '';
 
-      // Use real benchmark data if available, otherwise estimate
-      const timePerHash = benchmarkResults.length > 0
-        ? (benchmarkResults.find(r => r.cost === 12)?.timeMs ?? 400)
-        : 400; // ms per hash at cost ~12
-
+      const timePerHash = benchmarkResults.find(r => r.cost === 12)?.timeMs ?? 250;
       const dictionarySize = 100_000;
-      const totalTime = (dictionarySize * timePerHash) / 1000; // seconds
+      const totalSeconds = (dictionarySize * timePerHash) / 1000;
+      const timeStr = formatDuration(totalSeconds);
 
-      let timeStr: string;
-      if (totalTime < 60) timeStr = `${totalTime.toFixed(0)} seconds`;
-      else if (totalTime < 3600) timeStr = `${(totalTime / 60).toFixed(1)} minutes`;
-      else if (totalTime < 86400) timeStr = `${(totalTime / 3600).toFixed(1)} hours`;
-      else timeStr = `${(totalTime / 86400).toFixed(1)} days`;
-
-      // Simulate progress over 5 seconds at realistic pace.
       let elapsedMs = 0;
-      const totalMs = totalTime * 1000;
-      const interval = setInterval(() => {
+      const totalMs = totalSeconds * 1000;
+      const interval = window.setInterval(() => {
         elapsedMs += 100;
         const progress = Math.min((elapsedMs / totalMs) * 100, 100);
         if (fillEl) (fillEl as HTMLElement).style.width = `${progress}%`;
         if (textEl) {
           textEl.textContent =
             `Attempted ${Math.floor(dictionarySize * progress / 100).toLocaleString()} of ` +
-            `${dictionarySize.toLocaleString()} dictionary words… ` +
-            `Estimated total time: ${timeStr} per user`;
+            `${dictionarySize.toLocaleString()} dictionary words… Estimated total: ${timeStr} per user`;
         }
-
-        if (progress >= 100) {
-          clearInterval(interval);
-        }
+        if (progress >= 100) clearInterval(interval);
       }, 100);
 
-      // After 5 seconds, stop and show callout
-      setTimeout(() => {
+      window.setTimeout(() => {
         clearInterval(interval);
         if (textEl) {
           textEl.innerHTML =
             `<strong style="color: var(--color-valid-text);">Gave up after 5 seconds.</strong> ` +
             `At ${timePerHash.toFixed(0)} ms/hash, cracking a 100,000-word dictionary would take ` +
-            `<strong>${timeStr}</strong> per user × 8 users.`;
+            `<strong>${timeStr}</strong> per user × ${DEMO_USERS.length} users.`;
         }
         breachBtn.textContent = 'Too Slow!';
         const callout = $('p6c-callout');

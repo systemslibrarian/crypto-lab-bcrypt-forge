@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="bcrypt Forge">
+  <rect width="64" height="64" rx="14" fill="#0f1117"/>
+  <!-- Four-band motif echoing the bcrypt hash anatomy: version, cost, salt, hash -->
+  <rect x="10" y="14" width="8"  height="36" rx="3" fill="#4a9eff"/>
+  <rect x="22" y="14" width="8"  height="36" rx="3" fill="#f59e0b"/>
+  <rect x="34" y="14" width="8"  height="36" rx="3" fill="#22c55e"/>
+  <rect x="46" y="14" width="8"  height="36" rx="3" fill="#a855f7"/>
+</svg>

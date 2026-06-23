@@ -30,6 +30,8 @@ bcrypt is a password hashing function designed by Niels Provos and David Mazièr
 
 Six exhibits: bcrypt anatomy with color-annotated output, live hash generator with cost slider and timing, cost factor benchmark across factors 8–14, timing-safe verify with attack visualizer, algorithm comparison table (bcrypt vs Argon2id vs PBKDF2 vs MD5), and a real-world breach simulation showing plaintext vs MD5 vs bcrypt outcomes.
 
+Every hash is **real, computed in your browser** — never simulated. All CPU-heavy work (bcrypt, PBKDF2, MD5) runs in a **Web Worker**, so the UI stays smooth even while hashing at cost 14.
+
 ---
 
 ## How to Run Locally
@@ -38,8 +40,19 @@ Six exhibits: bcrypt anatomy with color-annotated output, live hash generator wi
 git clone https://github.com/systemslibrarian/crypto-lab-bcrypt-forge
 cd crypto-lab-bcrypt-forge
 npm install
-npm run dev
+npm run dev          # start the dev server
+npm test             # run the unit + integration tests
+npm run type-check   # strict TypeScript, no emit
+npm run build        # production build to dist/
 ```
+
+---
+
+## Architecture
+
+- **No frameworks.** Vanilla TypeScript, plain CSS with design tokens, mobile-first, WCAG 2.1 AA, dark/light theme, and `prefers-reduced-motion` support.
+- **Web Worker crypto.** `src/crypto-worker.ts` runs bcrypt, PBKDF2, and MD5 off the main thread; `src/crypto-client.ts` is a promise-based RPC wrapper. Timings are measured *inside* the worker, so the benchmark numbers reflect the raw primitive rather than scheduling overhead — and the UI never freezes.
+- **Pure, tested core.** `src/lib.ts` holds DOM-free helpers (MD5, bcrypt-hash parsing, duration formatting) covered by `npm test` — including MD5 known-answer vectors and a bcryptjs round-trip integration test.
 
 ---
 
