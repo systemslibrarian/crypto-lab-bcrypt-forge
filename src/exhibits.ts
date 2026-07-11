@@ -94,7 +94,7 @@ export function initExhibit1(): void {
       { cls: 'hash', label: 'Hash (31 chars)' },
     ].map(item =>
       `<div class="anatomy-legend__item" role="listitem">` +
-      `<span class="anatomy-legend__dot" style="background: var(--color-${item.cls})"></span>` +
+      `<span class="anatomy-legend__dot" style="background-color: var(--color-${item.cls})"></span>` +
       `<span>${item.label}</span></div>`,
     ).join('');
 
@@ -240,7 +240,7 @@ export function initExhibit3(): void {
 
     if (crackingEl) {
       let crackHtml =
-        '<div style="margin-top: var(--space-4); padding: var(--space-4); background: var(--color-surface); ' +
+        '<div style="margin-top: var(--space-4); padding: var(--space-4); background-color: var(--color-surface); ' +
         'border: 1px solid var(--color-border); border-radius: var(--radius-md);">' +
         '<div style="font-weight: 700; color: var(--color-text); margin-bottom: var(--space-3);">' +
         'Single-GPU brute-force of one password (8-char lowercase + digit, ~2.8 trillion candidates)</div>';
