@@ -163,39 +163,19 @@
   <div id="aria-announcer" role="status" aria-live="polite" aria-atomic="true" class="sr-only"></div>
 
   <!-- ═══════════════════════════════════════════════════════ HEADER -->
-  <header class="site-header" role="banner">
-    <div class="site-header__inner">
-      <div class="site-header__top">
-        <span class="category-chip" aria-label="Category: Password Hashing">Password Hashing</span>
-        <button id="theme-toggle"
-                class="theme-toggle"
-                type="button"
-                aria-label="Switch to light mode">
-          🌙
-        </button>
-      </div>
-
-      <div class="site-header__title-block">
-        <h1 class="site-title">
-          <span class="site-title__main">bcrypt Forge</span>
-          <span class="site-title__sub">Password Hashing — Interactive Deep Dive</span>
-        </h1>
-        <div class="primitive-chips" aria-label="Cryptographic primitives used">
-          <span class="primitive-chips__label">Topics covered:</span>
-          <span class="chip">Blowfish</span>
-          <span class="chip">bcrypt</span>
-          <span class="chip">Cost Factor</span>
-          <span class="chip">Timing-Safe</span>
-        </div>
-      </div>
-
-      <div class="why-matters" role="note" aria-label="Why this matters">
-        <strong>Why this matters:</strong>
-        bcrypt is the most widely deployed password hashing scheme in production systems.
-        Understanding its structure helps developers store, verify, and migrate passwords safely.
-      </div>
+  <header class="cl-hero">
+    <div class="cl-hero-main">
+      <h1 class="cl-hero-title">bcrypt Forge</h1>
+      <p class="cl-hero-sub">Password Hashing · Adaptive Cost · Salted</p>
+      <p class="cl-hero-desc">Generate real bcrypt hashes in your browser, dissect their version/cost/salt/hash anatomy, benchmark how each cost step doubles the work, and watch salting and timing-safe verification hold up against breach and rainbow-table attacks.</p>
     </div>
+    <aside class="cl-hero-why" aria-label="Why it matters">
+      <span class="cl-hero-why-label">WHY IT MATTERS</span>
+      <p class="cl-hero-why-text">Leaked password databases are inevitable; what saves your users is how the passwords were stored. bcrypt's deliberate slowness and per-user salt turn an instant plaintext or MD5 catastrophe into weeks of attacker effort per account.</p>
+    </aside>
   </header>
+
+  <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to light mode" hidden>🌙</button>
 
   <!-- ─── Panel navigation (sticky) ────────────────────────────── -->
   <div class="tabs-sticky-bar">
