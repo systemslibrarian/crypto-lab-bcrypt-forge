@@ -243,10 +243,91 @@
           <div id="p1-anatomy-arrows" style="font-family: var(--font-mono); font-size: 0.8125rem; color: var(--color-text-3); margin-top: var(--space-2); overflow-x: auto; white-space: nowrap;" aria-hidden="true"></div>
         </section>
 
+        <section class="panel-section" aria-labelledby="p1-eks-heading">
+          <h3 id="p1-eks-heading" class="section-title">Why bcrypt Is Slow: The Eksblowfish Key Schedule</h3>
+          <p style="color: var(--color-text-2); font-size: 0.9375rem; margin-bottom: var(--space-4);">
+            The cost factor is not an arbitrary dial — it is literally an exponent. bcrypt runs
+            Blowfish's key setup, then <em>repeats</em> it <strong>2<sup>cost</sup></strong> times, each round
+            re-mixing your password and salt into an 18-word subkey array (the <span class="term" tabindex="0" role="button" aria-expanded="false" aria-describedby="def-parray">P-array<span class="term__tip" id="def-parray" role="tooltip">The 18 32-bit subkeys Blowfish derives from its key. In bcrypt these are re-derived every round, so the whole key schedule — not just one hash — is what gets repeated 2^cost times.</span></span>) and four
+            256-entry substitution boxes (the <span class="term" tabindex="0" role="button" aria-expanded="false" aria-describedby="def-sbox">S-boxes<span class="term__tip" id="def-sbox" role="tooltip">Four lookup tables of 256 32-bit words each = 4 KB of state that must be held and rewritten. This size is what makes bcrypt awkward to parallelize on a GPU's small per-core memory.</span></span>, 4 KB of state).
+            That 4 KB of constantly-rewritten state is what makes bcrypt awkward to run massively-parallel on a GPU.
+          </p>
+
+          <div class="control-row">
+            <label for="p1-eks-cost" class="control-label">Move the cost factor to see the round count:</label>
+            <div class="range-row">
+              <input id="p1-eks-cost" type="range" min="4" max="14" value="6"
+                     aria-label="Cost factor for key-schedule animation"
+                     aria-valuemin="4" aria-valuemax="14" aria-valuenow="6" />
+              <span id="p1-eks-cost-value" class="range-value">6</span>
+            </div>
+            <p id="p1-eks-rounds" style="font-size: 0.9375rem; color: var(--color-text-2); margin: var(--space-2) 0 0;">
+              cost 6 → 2<sup>6</sup> = <strong style="color: var(--color-warning-text);">64</strong> key-expansion rounds
+            </p>
+          </div>
+
+          <div class="button-row">
+            <button id="p1-eks-run-btn" type="button" class="btn btn--primary">
+              Animate the key schedule
+            </button>
+          </div>
+
+          <div id="p1-eks-stage" class="eks-stage" aria-hidden="true">
+            <div class="eks-mix">
+              <span class="eks-chip eks-chip--pw">password</span>
+              <span class="eks-plus" aria-hidden="true">+</span>
+              <span class="eks-chip eks-chip--salt">salt</span>
+              <span class="eks-arrow" aria-hidden="true">→</span>
+              <span class="eks-chip eks-chip--state">P-array + 4&nbsp;KB S-boxes</span>
+            </div>
+            <div class="eks-sboxes" id="p1-eks-sboxes"></div>
+          </div>
+
+          <div id="p1-eks-progress" class="status-display" role="status" aria-live="polite" style="margin-top: var(--space-3);">
+            Press “Animate the key schedule” to watch the salt and password get folded into the
+            Blowfish state 2<sup>cost</sup> times.
+          </div>
+        </section>
+
+        <section class="panel-section" aria-labelledby="p1-72-heading">
+          <h3 id="p1-72-heading" class="section-title">The 72-Byte Limit — bcrypt's #1 Footgun</h3>
+          <p style="color: var(--color-text-2); font-size: 0.9375rem; margin-bottom: var(--space-4);">
+            bcrypt only feeds the <strong>first 72 bytes</strong> of a password into the key schedule. Everything
+            after byte 72 is silently ignored. Two different passwords that share the same 72-byte prefix
+            therefore produce a hash that <em>verifies against either one</em>. Type two long passwords below
+            that agree for the first 72 bytes but differ afterward, and watch them cross-verify.
+          </p>
+
+          <div class="control-row">
+            <label for="p1-72-a" class="control-label">Password A:</label>
+            <input id="p1-72-a" type="text" class="text-input mono-input"
+                   value="ThisIsAVeryLongPasswordThatKeepsGoingWellPastSeventyTwoBytesInTotalXXXX_AAAAAA"
+                   autocomplete="off" spellcheck="false" aria-label="First long password" />
+          </div>
+          <div class="control-row">
+            <label for="p1-72-b" class="control-label">Password B:</label>
+            <input id="p1-72-b" type="text" class="text-input mono-input"
+                   value="ThisIsAVeryLongPasswordThatKeepsGoingWellPastSeventyTwoBytesInTotalXXXX_BBBBBB"
+                   autocomplete="off" spellcheck="false" aria-label="Second long password" />
+          </div>
+
+          <div id="p1-72-prefix" aria-live="polite" style="font-size: 0.8125rem; color: var(--color-text-3); margin-bottom: var(--space-3);"></div>
+
+          <div class="button-row">
+            <button id="p1-72-run-btn" type="button" class="btn btn--primary">
+              Hash A, then verify B against it
+            </button>
+          </div>
+
+          <div id="p1-72-result" aria-live="polite"></div>
+        </section>
+
         <div class="callout">
           <div class="callout__title">Why This Matters</div>
           bcrypt is the most widely deployed password hashing scheme in production systems.
-          Understanding its structure helps developers store, verify, and migrate passwords safely.
+          Understanding its structure — that “cost” means literal rounds of Blowfish key setup, and
+          that only the first 72 bytes count — helps developers store, verify, and migrate passwords
+          safely, and choose a cost that is slow for attackers yet fast enough for login.
         </div>
       </div>
     </section>
@@ -336,6 +417,16 @@
         <section class="panel-section" aria-labelledby="p3-chart-heading">
           <h3 id="p3-chart-heading" class="section-title">Results</h3>
           <div id="p3-chart" class="bar-chart" aria-label="Benchmark bar chart"></div>
+          <div id="p3-thresholds" class="threshold-legend" hidden>
+            <span class="threshold-legend__item">
+              <span class="threshold-legend__swatch threshold-legend__swatch--login" aria-hidden="true"></span>
+              Login sweet spot: under ~250&nbsp;ms feels instant to a user
+            </span>
+            <span class="threshold-legend__item">
+              <span class="threshold-legend__swatch threshold-legend__swatch--attack" aria-hidden="true"></span>
+              Above ~250&nbsp;ms: each step multiplies an attacker's per-guess cost toward infeasible
+            </span>
+          </div>
         </section>
 
         <div id="p3-cracking-estimates" style="margin-top: var(--space-4);" aria-label="Estimated cracking times"></div>
@@ -354,8 +445,11 @@
       <div class="panel__inner">
         <h2 class="panel__title">Verify &amp; Timing-Safe Comparison</h2>
         <p class="panel__intro">
-          bcrypt.compare() verifies a password against a stored hash using constant-time comparison,
-          preventing timing oracle attacks.
+          bcrypt's <strong>headline defense is slowness + per-user salt</strong> (Exhibits 1 &amp; 3) — that is what
+          survives a database breach. Constant-time comparison, shown here, is a <em>secondary</em> hardening:
+          it stops a subtler leak in <em>how</em> you compare the final hash. <code>bcrypt.compare()</code> checks a
+          password against a stored hash in constant time, closing a
+          <span class="term" tabindex="0" role="button" aria-expanded="false" aria-describedby="def-oracle">timing oracle<span class="term__tip" id="def-oracle" role="tooltip">An attacker who can measure how long a comparison takes and learn a secret from it. A naive byte-by-byte === returns faster on the first mismatch, so response time leaks how many leading bytes were guessed correctly.</span></span>.
         </p>
 
         <!-- Panel A: Basic verify -->
@@ -402,11 +496,28 @@
 
         <!-- Panel B: Timing attack visualizer -->
         <section class="panel-section" aria-labelledby="p4b-heading">
-          <h3 id="p4b-heading" class="section-title">Timing Attack Visualizer</h3>
-          <p style="color: var(--color-text-2); font-size: 0.875rem; margin-bottom: var(--space-4);">
-            A naive <code>===</code> string comparison leaks information about where the first mismatch occurs.
-            bcrypt's constant-time compare takes the same duration regardless of match or mismatch.
+          <h3 id="p4b-heading" class="section-title">Timing Leak: This Is Why You Never Compare Hashes With <code>===</code></h3>
+          <p style="color: var(--color-text-2); font-size: 0.875rem; margin-bottom: var(--space-3);">
+            A naive <code>===</code> comparison returns as soon as it hits the first mismatched byte, so it runs
+            <em>longer</em> the more leading bytes an attacker guesses correctly. That duration is a leak.
+            <code>bcrypt.compare()</code> checks every byte regardless, so its time reveals nothing.
           </p>
+          <p style="color: var(--color-text-3); font-size: 0.8125rem; margin-bottom: var(--space-4);">
+            <strong>Honesty note:</strong> a real === leak on a modern CPU is a few <em>nanoseconds</em> — far too small
+            to see on a bar. Choose how to expose it:
+          </p>
+
+          <fieldset class="mode-toggle">
+            <legend class="sr-only">Timing measurement mode</legend>
+            <label class="mode-toggle__opt">
+              <input type="radio" name="p4-timing-mode" id="p4-mode-histogram" value="histogram" checked />
+              <span><strong>Measure real timings</strong> — run 4,000 trials each and plot the histogram; the tiny leak emerges from real data.</span>
+            </label>
+            <label class="mode-toggle__opt">
+              <input type="radio" name="p4-timing-mode" id="p4-mode-simulated" value="simulated" />
+              <span><strong>Simulated leak (exaggerated)</strong> — amplify each byte-compare so the shape is obvious. Clearly labeled; the bars are illustrative, not measured.</span>
+            </label>
+          </fieldset>
 
           <div class="button-row">
             <button id="p4-timing-btn" type="button" class="btn btn--primary">
@@ -423,9 +534,9 @@
             </div>
             <div>
               <h4 style="font-size: 0.875rem; font-weight: 700; color: var(--color-valid-text); margin-bottom: var(--space-2);">
-                bcrypt.compare (constant time)
+                Constant-time compare
               </h4>
-              <div id="p4-bcrypt-chart" class="timing-chart" aria-label="bcrypt comparison timings"></div>
+              <div id="p4-bcrypt-chart" class="timing-chart" aria-label="Constant-time comparison timings"></div>
             </div>
           </div>
 
@@ -434,9 +545,10 @@
 
         <div class="callout callout--warning">
           <div class="callout__title">Why This Matters</div>
-          A timing oracle attack recovers secrets one byte at a time by measuring comparison duration.
-          Constant-time comparison is not optional — it is a fundamental requirement for any
-          security-sensitive string comparison.
+          A timing oracle recovers secrets one byte at a time by measuring comparison duration.
+          Use a constant-time comparison for any secret — <code>bcrypt.compare()</code>, HMAC tags, tokens.
+          But keep it in proportion: bcrypt's <em>defining</em> value is being deliberately slow and salted,
+          not the constant-time compare. That compare is the last mile of an already-strong scheme.
         </div>
       </div>
     </section>
@@ -459,7 +571,7 @@
                   <th scope="col">Algorithm</th>
                   <th scope="col">Year</th>
                   <th scope="col">Adaptive</th>
-                  <th scope="col">Memory-hard</th>
+                  <th scope="col" title="Requires a large, tunable amount of RAM, which is expensive to replicate across a GPU or ASIC's many cores — so it resists massively-parallel cracking.">Memory-hard</th>
                   <th scope="col">GPU-resistant</th>
                   <th scope="col">Status</th>
                 </tr>

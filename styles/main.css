@@ -648,6 +648,155 @@ a:hover { text-decoration: none; }
   flex-shrink: 0;
 }
 
+/* ─── Eksblowfish key-schedule animation (Exhibit 1) ─────────────── */
+.eks-stage {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface);
+  padding: var(--space-4);
+  margin-top: var(--space-3);
+}
+.eks-mix {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+.eks-chip {
+  padding: 2px 10px;
+  border-radius: 99px;
+  font-weight: 700;
+  border: 1px solid var(--color-border-2);
+}
+.eks-chip--pw    { color: var(--color-version); border-color: var(--color-version); }
+.eks-chip--salt  { color: var(--color-salt);    border-color: var(--color-salt); }
+.eks-chip--state { color: var(--color-cost);    border-color: var(--color-cost); }
+.eks-plus, .eks-arrow { color: var(--color-text-3); font-weight: 700; }
+.eks-sboxes {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  gap: 3px;
+}
+.eks-cell {
+  aspect-ratio: 1 / 1;
+  min-height: 10px;
+  border-radius: 2px;
+  background-color: var(--color-bg-3);
+  border: 1px solid var(--color-border);
+  transition: background-color 0.25s, border-color 0.25s;
+}
+.eks-cell--pw   { background-color: var(--color-version); border-color: var(--color-version); }
+.eks-cell--salt { background-color: var(--color-salt);    border-color: var(--color-salt); }
+.eks-cell--done { background-color: var(--color-cost);    border-color: var(--color-cost); opacity: 0.85; }
+
+/* ─── Inline term definitions (tooltip) ──────────────────────────── */
+.term {
+  position: relative;
+  cursor: help;
+  font-weight: 600;
+  color: var(--color-primary);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.term:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.term__tip {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 50;
+  width: min(24rem, 80vw);
+  padding: var(--space-3);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-text);
+  background-color: var(--color-surface-2);
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.term--open .term__tip { display: block; }
+
+/* ─── Mode toggle (Exhibit 4 timing) ─────────────────────────────── */
+.mode-toggle {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
+  background-color: var(--color-surface);
+}
+.mode-toggle__opt {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding: var(--space-2) 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-2);
+  cursor: pointer;
+}
+.mode-toggle__opt input {
+  margin-top: 0.2em;
+  accent-color: var(--color-primary);
+  flex-shrink: 0;
+}
+.mode-toggle__opt strong { color: var(--color-text); }
+
+/* ─── Monospace text inputs (72-byte exhibit) ────────────────────── */
+.mono-input {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+/* ─── Benchmark threshold markers (Exhibit 3) ────────────────────── */
+.bar-threshold {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background-color: var(--color-text);
+  opacity: 0.55;
+  z-index: 2;
+}
+.bar-verdict {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  min-width: 11ch;
+  flex-shrink: 0;
+}
+.bar-verdict--login  { color: var(--color-valid-text); }
+.bar-verdict--attack { color: var(--color-warning-text); }
+.threshold-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+  font-size: 0.8125rem;
+  color: var(--color-text-2);
+}
+.threshold-legend__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.threshold-legend__swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.threshold-legend__swatch--login  { background-color: var(--color-valid); }
+.threshold-legend__swatch--attack { background-color: var(--color-warning); }
+
 /* ─── Bar charts ─────────────────────────────────────────────────── */
 .bar-chart {
   display: flex;

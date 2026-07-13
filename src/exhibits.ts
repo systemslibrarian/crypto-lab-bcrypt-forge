@@ -104,6 +104,201 @@ export function initExhibit1(): void {
       '<span style="color:var(--color-salt)">←———— 22 chars ————→</span>' +
       '<span style="color:var(--color-hash)">←————————— 31 chars —————————→</span>';
   });
+
+  initEksSchedule();
+  init72ByteLimit();
+  wireTermTooltips();
+}
+
+/**
+ * "Why bcrypt is slow" — an honest visualization of Eksblowfish's
+ * `expensive_key_schedule`. This does NOT fake a hash: it mirrors the real
+ * control flow of bcrypt's setup (bcrypt_setup → EksBlowfishSetup):
+ *
+ *   1. Blowfish is initialized (P-array + 4 S-boxes = 4 KB of state).
+ *   2. The state is keyed once with the salt and once with the password.
+ *   3. Then the loop runs 2^cost times, each iteration re-keying the state
+ *      alternately with the salt and the password. THAT loop is "the cost".
+ *
+ * We animate a representative sample of the S-box words being rewritten and
+ * report the true round count (2^cost). The real hashing still happens in the
+ * worker via bcryptjs; this panel explains the mechanism, it does not replace it.
+ */
+function initEksSchedule(): void {
+  const slider = $('p1-eks-cost') as HTMLInputElement | null;
+  const costValue = $('p1-eks-cost-value');
+  const roundsEl = $('p1-eks-rounds');
+  const runBtn = $('p1-eks-run-btn') as HTMLButtonElement | null;
+  const sboxesEl = $('p1-eks-sboxes');
+  const progressEl = $('p1-eks-progress');
+  const stageEl = $('p1-eks-stage');
+  if (!slider || !runBtn || !sboxesEl || !progressEl) return;
+
+  // 8x8 grid of cells standing in for a sample of the 1,042 32-bit state words.
+  const CELLS = 64;
+  sboxesEl.innerHTML = Array.from({ length: CELLS }, (_, i) =>
+    `<span class="eks-cell" data-i="${i}"></span>`).join('');
+  const cells = Array.from(sboxesEl.querySelectorAll<HTMLElement>('.eks-cell'));
+
+  const renderRounds = (cost: number): void => {
+    if (roundsEl) {
+      roundsEl.innerHTML =
+        `cost ${cost} → 2<sup>${cost}</sup> = ` +
+        `<strong style="color: var(--color-warning-text);">${(2 ** cost).toLocaleString()}</strong> key-expansion rounds`;
+    }
+  };
+
+  slider.addEventListener('input', () => {
+    const cost = parseInt(slider.value, 10);
+    if (costValue) costValue.textContent = String(cost);
+    slider.setAttribute('aria-valuenow', String(cost));
+    renderRounds(cost);
+  });
+  renderRounds(parseInt(slider.value, 10));
+
+  let animating = false;
+  runBtn.addEventListener('click', async () => {
+    if (animating) return;
+    animating = true;
+    runBtn.disabled = true;
+    if (stageEl) stageEl.classList.add('eks-stage--active');
+
+    const cost = parseInt(slider.value, 10);
+    const totalRounds = 2 ** cost;
+    // Show a fixed number of visual frames regardless of cost, but always report
+    // the TRUE round count so the number — not the animation length — carries the
+    // lesson (cost 14 would be 16,384 real rounds; we don't wait for all of them).
+    const FRAMES = Math.min(totalRounds, 40);
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const frameMs = reduced ? 0 : 45;
+
+    for (let f = 0; f < FRAMES; f++) {
+      const usingSalt = f % 2 === 0; // real Eksblowfish alternates salt / key
+      // Rewrite a scatter of state cells this round.
+      for (let k = 0; k < 10; k++) {
+        const cell = cells[Math.floor(Math.random() * cells.length)];
+        cell.className = `eks-cell eks-cell--hot ${usingSalt ? 'eks-cell--salt' : 'eks-cell--pw'}`;
+      }
+      const shownRound = Math.round(((f + 1) / FRAMES) * totalRounds);
+      progressEl.innerHTML =
+        `Round <strong>${shownRound.toLocaleString()}</strong> of <strong>${totalRounds.toLocaleString()}</strong> — ` +
+        `re-mixing the <span style="color: ${usingSalt ? 'var(--color-salt)' : 'var(--color-version)'};">` +
+        `${usingSalt ? 'salt' : 'password'}</span> into the 4&nbsp;KB Blowfish state.`;
+      if (frameMs) await new Promise(r => setTimeout(r, frameMs));
+    }
+
+    cells.forEach(c => { c.className = 'eks-cell eks-cell--done'; });
+    progressEl.innerHTML =
+      `Done: the key schedule ran <strong>2<sup>${cost}</sup> = ${totalRounds.toLocaleString()}</strong> rounds. ` +
+      `Each +1 to cost <strong>doubles</strong> that count — this is the “work” that “cost doubles.” ` +
+      `The finished 4&nbsp;KB state becomes the Blowfish key that encrypts bcrypt's magic string into the hash.`;
+
+    runBtn.disabled = false;
+    animating = false;
+  });
+}
+
+/**
+ * The 72-byte limit made visceral. We hash password A in the worker (a real
+ * bcrypt hash), then verify password B against it. When A and B share a 72-byte
+ * prefix, bcryptjs itself reports a match — no faking: bcrypt truly ignores
+ * bytes past 72, so the real primitive returns true.
+ */
+function init72ByteLimit(): void {
+  const aInput = $('p1-72-a') as HTMLInputElement | null;
+  const bInput = $('p1-72-b') as HTMLInputElement | null;
+  const prefixEl = $('p1-72-prefix');
+  const runBtn = $('p1-72-run-btn') as HTMLButtonElement | null;
+  const resultEl = $('p1-72-result');
+  if (!aInput || !bInput || !runBtn || !resultEl) return;
+
+  const byteLen = (s: string): number => new TextEncoder().encode(s).length;
+
+  const sharedPrefixBytes = (a: string, b: string): number => {
+    const ea = new TextEncoder().encode(a);
+    const eb = new TextEncoder().encode(b);
+    let i = 0;
+    while (i < ea.length && i < eb.length && ea[i] === eb[i]) i++;
+    return i;
+  };
+
+  const updatePrefix = (): void => {
+    if (!prefixEl) return;
+    const shared = sharedPrefixBytes(aInput.value, bInput.value);
+    const aLen = byteLen(aInput.value);
+    const bLen = byteLen(bInput.value);
+    const collide = shared >= 72 && aLen > 72 && bLen > 72;
+    prefixEl.innerHTML =
+      `A is ${aLen} bytes, B is ${bLen} bytes; they share the first ` +
+      `<strong style="color: var(--color-text);">${shared}</strong> bytes. ` +
+      (collide
+        ? `<span style="color: var(--color-warning-text);">Both exceed 72 bytes and agree through byte 72 — bcrypt will treat them as identical.</span>`
+        : `<span style="color: var(--color-text-3);">Make both longer than 72 bytes while keeping the first 72 identical to force a collision.</span>`);
+  };
+
+  aInput.addEventListener('input', updatePrefix);
+  bInput.addEventListener('input', updatePrefix);
+  updatePrefix();
+
+  runBtn.addEventListener('click', async () => {
+    const a = aInput.value;
+    const b = bInput.value;
+    if (!a || !b) {
+      resultEl.innerHTML = '<div class="status-display">Enter both passwords.</div>';
+      return;
+    }
+    runBtn.disabled = true;
+    runBtn.innerHTML = '<span class="spinner"></span> Hashing A &amp; verifying B…';
+    resultEl.innerHTML = '';
+
+    try {
+      const { hash } = await cryptoClient.hash(a, 10);
+      const { match } = await cryptoClient.compare(b, hash);
+      const identical = a === b;
+      const cls = match ? 'verify-result--no-match' : 'verify-result--match';
+      // Note: here a MATCH is the *alarming* outcome (B ≠ A yet verifies), so we
+      // paint a positive verify with the danger style and say so in words + icon.
+      const icon = match ? '⚠' : '✓';
+      const headline = match
+        ? (identical
+            ? 'Match — the two passwords are identical, so of course B verifies.'
+            : 'Match — B is a DIFFERENT password, yet it verifies against A’s hash!')
+        : 'No match — these differ within the first 72 bytes, so bcrypt tells them apart.';
+      resultEl.innerHTML =
+        `<div class="verify-result ${cls}">${icon} ${escapeHtml(headline)}</div>` +
+        `<div class="status-display" style="font-family: var(--font-mono); font-size: 0.75rem; word-break: break-all;">` +
+        `bcrypt.compare(B, hash(A)) → <strong>${match ? 'true' : 'false'}</strong><br>hash(A) = ${escapeHtml(hash)}</div>` +
+        (match && !identical
+          ? `<div class="status-display" style="font-size: 0.8125rem;">Everything after byte 72 was discarded before hashing. In production, truncate-and-warn or pre-hash long inputs (e.g. SHA-256 → base64) before bcrypt.</div>`
+          : '');
+    } catch (err) {
+      resultEl.innerHTML = `<div class="verify-result verify-result--no-match">Failed: ${escapeHtml(String(err))}</div>`;
+    } finally {
+      runBtn.disabled = false;
+      runBtn.textContent = 'Hash A, then verify B against it';
+    }
+  });
+}
+
+/**
+ * First-use inline definitions. A `.term` span carries its own `.term__tip`
+ * child (a tooltip). We make it keyboard-operable: focus or click toggles
+ * aria-expanded and a visible class; Escape closes it.
+ */
+function wireTermTooltips(): void {
+  document.querySelectorAll<HTMLElement>('.term').forEach(term => {
+    const open = (state: boolean): void => {
+      term.setAttribute('aria-expanded', String(state));
+      term.classList.toggle('term--open', state);
+    };
+    term.addEventListener('click', () => open(term.getAttribute('aria-expanded') !== 'true'));
+    term.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(term.getAttribute('aria-expanded') !== 'true'); }
+      else if (e.key === 'Escape') open(false);
+    });
+    term.addEventListener('focus', () => open(true));
+    term.addEventListener('blur', () => open(false));
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -219,24 +414,39 @@ export function initExhibit3(): void {
     benchmarkResults = results;
     const maxTime = Math.max(...results.map(r => r.timeMs));
 
+    // The login "sweet spot": ~250 ms is the classic threshold below which a
+    // hash feels instant to a human logging in. It's a target, not a hard wall,
+    // so we draw it as a marker line the bars cross rather than a hard zone.
+    const LOGIN_MS = 250;
+    const loginPct = Math.min(100, (LOGIN_MS / maxTime) * 100);
+
     let chartHtml = '<div class="zone-label zone-label--danger">⚠ Danger zone (cost &lt; 10)</div>';
     for (const r of results) {
       const pct = (r.timeMs / maxTime) * 100;
       const multiplier = (r.timeMs / baseTime).toFixed(1);
       const isSafe = r.cost >= 10;
+      const instant = r.timeMs <= LOGIN_MS;
       if (r.cost === 10) {
         chartHtml += '<div class="zone-label zone-label--safe">✓ Safe zone (cost ≥ 10)</div>';
       }
       chartHtml +=
         `<div class="bar-row">` +
         `<span class="bar-label">${r.cost}</span>` +
-        `<div class="bar-track"><div class="bar-fill ${isSafe ? 'bar-fill--safe' : 'bar-fill--danger'}" ` +
+        `<div class="bar-track">` +
+        // Marker line at the ~250 ms human-perception threshold.
+        `<span class="bar-threshold" style="left: ${loginPct}%" aria-hidden="true"></span>` +
+        `<div class="bar-fill ${isSafe ? 'bar-fill--safe' : 'bar-fill--danger'}" ` +
         `style="width: ${pct}%"></div></div>` +
         `<span class="bar-time">${r.timeMs.toFixed(0)} ms</span>` +
         `<span class="bar-multiplier">${multiplier}×</span>` +
+        `<span class="bar-verdict ${instant ? 'bar-verdict--login' : 'bar-verdict--attack'}">` +
+        `${instant ? 'feels instant' : 'attacker-costly'}</span>` +
         `</div>`;
     }
     chartEl.innerHTML = chartHtml;
+
+    const thresholdsEl = $('p3-thresholds');
+    if (thresholdsEl) thresholdsEl.hidden = false;
 
     if (crackingEl) {
       let crackHtml =
@@ -352,72 +562,146 @@ export function initExhibit4(): void {
 
   if (timingBtn && naiveChart && bcryptChart) {
     timingBtn.addEventListener('click', async () => {
-      if (!exampleHash) return;
       timingBtn.disabled = true;
       timingBtn.innerHTML = '<span class="spinner"></span> Running…';
+      const mode =
+        (document.querySelector('input[name="p4-timing-mode"]:checked') as HTMLInputElement | null)?.value ?? 'histogram';
 
-      const target = exampleHash;
-      const naiveTimings: number[] = [];
-      const bcryptTimings: number[] = [];
+      // Allow the spinner to paint before we hog the thread with tight loops.
+      await new Promise(r => setTimeout(r, 0));
 
-      // 10 probes that match progressively more of the hash prefix.
-      const testStrings: string[] = [];
-      for (let i = 0; i < 10; i++) {
-        const prefix = target.substring(0, i * 6);
-        testStrings.push(prefix + 'x'.repeat(target.length - prefix.length));
-      }
-
-      for (let i = 0; i < 10; i++) {
-        // Naive ===: an *illustrative* byte-by-byte compare whose duration
-        // grows with the matching-prefix length — the leak constant-time
-        // comparison is designed to prevent.
-        const testStr = testStrings[i];
-        const t0 = performance.now();
-        for (let j = 0; j < testStr.length; j++) {
-          if (testStr[j] !== target[j]) break;
-          const end = performance.now() + 0.005;
-          while (performance.now() < end) { /* busy wait — exaggerate the leak */ }
-        }
-        naiveTimings.push(performance.now() - t0);
-
-        // bcrypt compare runs off-thread and is timed inside the worker.
-        const { timeMs } = await cryptoClient.compare(EXAMPLE_PASSWORD, target);
-        bcryptTimings.push(timeMs);
-      }
-
-      const globalMaxNaive = Math.max(...naiveTimings, 0.01);
-      const globalMaxBcrypt = Math.max(...bcryptTimings, 0.01);
-
-      naiveChart.innerHTML = naiveTimings.map((t, i) =>
-        `<div class="timing-row">` +
-        `<span class="timing-label">#${i + 1}</span>` +
-        `<div class="bar-track" style="height: 16px;">` +
-        `<div class="timing-bar timing-bar--naive" style="width: ${(t / globalMaxNaive) * 100}%"></div></div>` +
-        `<span class="timing-label">${t.toFixed(3)}ms</span></div>`,
-      ).join('');
-
-      bcryptChart.innerHTML = bcryptTimings.map((t, i) =>
-        `<div class="timing-row">` +
-        `<span class="timing-label">#${i + 1}</span>` +
-        `<div class="bar-track" style="height: 16px;">` +
-        `<div class="timing-bar timing-bar--bcrypt" style="width: ${(t / globalMaxBcrypt) * 100}%"></div></div>` +
-        `<span class="timing-label">${t.toFixed(1)}ms</span></div>`,
-      ).join('');
-
-      if (timingStats) {
-        timingStats.innerHTML =
-          `<div class="status-display">` +
-          `<strong>Timing variance:</strong> ` +
-          `Naive: <span style="color: var(--color-invalid-text);">${variance(naiveTimings).toFixed(4)} ms²</span> — ` +
-          `bcrypt: <span style="color: var(--color-valid-text);">${variance(bcryptTimings).toFixed(4)} ms²</span><br>` +
-          `<span style="font-size: 0.8125rem; color: var(--color-text-3);">` +
-          `The naive bars are an exaggerated illustration; the leak is real but measured in nanoseconds. ` +
-          `bcrypt's constant-time compare reveals nothing about where a mismatch occurs.</span></div>`;
-      }
+      if (mode === 'histogram') runHistogram(naiveChart, bcryptChart, timingStats);
+      else runSimulated(naiveChart, bcryptChart, timingStats);
 
       timingBtn.disabled = false;
       timingBtn.textContent = 'Run Timing Comparison';
     });
+  }
+}
+
+/** Two byte strings of equal length. `matchLen` leading bytes are identical. */
+function makeProbe(matchLen: number, total: number): [string, string] {
+  const shared = 'a'.repeat(matchLen);
+  const target = shared + 'b'.repeat(total - matchLen);
+  const guess = shared + 'c'.repeat(total - matchLen);
+  return [target, guess];
+}
+
+/** Early-exit byte compare — the leaky one. */
+function naiveEquals(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** Compare every byte regardless of mismatch — the constant-time one. */
+function constantTimeEquals(a: string, b: string): boolean {
+  let diff = a.length ^ b.length;
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) diff |= (a.charCodeAt(i % a.length) ^ b.charCodeAt(i % b.length));
+  return diff === 0;
+}
+
+/**
+ * REAL measurement, no busy-wait, no fabrication. We time thousands of naive vs
+ * constant-time compares for a 0-byte-match probe and a near-full-match probe.
+ * The mean of the near-match naive case is measurably higher because the loop
+ * runs further before returning — the leak emerges from data, not a fudge factor.
+ */
+function runHistogram(naiveChart: HTMLElement, bcryptChart: HTMLElement, statsEl: HTMLElement | null): void {
+  const TOTAL = 60;
+  const TRIALS = 4000;
+  const [target, mismatchGuess] = makeProbe(0, TOTAL);   // mismatch at byte 0
+  const [, nearGuess] = makeProbe(TOTAL - 1, TOTAL);      // mismatch at last byte
+
+  const timeMany = (fn: (a: string, b: string) => boolean, guess: string): number => {
+    // warm up
+    for (let i = 0; i < 500; i++) fn(target, guess);
+    const t0 = performance.now();
+    for (let i = 0; i < TRIALS; i++) fn(target, guess);
+    return (performance.now() - t0) / TRIALS * 1000; // µs per compare
+  };
+
+  const naiveEarly = timeMany(naiveEquals, mismatchGuess);
+  const naiveLate = timeMany(naiveEquals, nearGuess);
+  const ctEarly = timeMany(constantTimeEquals, mismatchGuess);
+  const ctLate = timeMany(constantTimeEquals, nearGuess);
+
+  const row = (label: string, val: number, max: number, cls: string): string =>
+    `<div class="timing-row">` +
+    `<span class="timing-label">${label}</span>` +
+    `<div class="bar-track" style="height: 16px;">` +
+    `<div class="timing-bar ${cls}" style="width: ${Math.max(2, (val / max) * 100)}%"></div></div>` +
+    `<span class="timing-label">${val.toFixed(3)}µs</span></div>`;
+
+  const naiveMax = Math.max(naiveEarly, naiveLate, 0.001);
+  const ctMax = Math.max(ctEarly, ctLate, 0.001);
+
+  naiveChart.innerHTML =
+    row('mismatch @0', naiveEarly, naiveMax, 'timing-bar--naive') +
+    row('mismatch @59', naiveLate, naiveMax, 'timing-bar--naive');
+  bcryptChart.innerHTML =
+    row('mismatch @0', ctEarly, ctMax, 'timing-bar--bcrypt') +
+    row('mismatch @59', ctLate, ctMax, 'timing-bar--bcrypt');
+
+  const leak = naiveLate - naiveEarly;
+  const ctGap = Math.abs(ctLate - ctEarly);
+  if (statsEl) {
+    statsEl.innerHTML =
+      `<div class="status-display">` +
+      `<strong>Real measurement (${TRIALS.toLocaleString()} trials each, mean µs/compare):</strong><br>` +
+      `Naive === leaks <span style="color: var(--color-invalid-text);">${leak >= 0 ? '+' : ''}${leak.toFixed(3)} µs</span> ` +
+      `between a byte-0 mismatch and a byte-59 mismatch — a small but real signal an attacker can average out over many requests.<br>` +
+      `Constant-time gap: <span style="color: var(--color-valid-text);">${ctGap.toFixed(3)} µs</span> (noise; no dependence on match length).<br>` +
+      `<span style="font-size: 0.8125rem; color: var(--color-text-3);">` +
+      `These are genuine timings from your CPU, in microseconds. On a loopback network the signal is buried in noise — ` +
+      `which is exactly why real attacks average thousands of samples, and why you still must use constant-time compare.</span></div>`;
+  }
+}
+
+/**
+ * SIMULATED mode — clearly labeled as illustrative, not measured. We amplify the
+ * per-byte cost so the leak's SHAPE is obvious on screen. The numbers shown are
+ * marked "simulated" so no learner mistakes them for real timings.
+ */
+function runSimulated(naiveChart: HTMLElement, bcryptChart: HTMLElement, statsEl: HTMLElement | null): void {
+  const naiveTimings: number[] = [];
+  const bcryptTimings: number[] = [];
+  const TOTAL = 60;
+  for (let i = 0; i < 10; i++) {
+    const matchLen = Math.round((i / 9) * TOTAL);
+    // Simulated: cost is proportional to how far the naive loop runs (matchLen),
+    // scaled by an obvious amplification so it's visible. Constant-time is flat.
+    naiveTimings.push(matchLen * 0.05 + Math.random() * 0.02);
+    bcryptTimings.push(TOTAL * 0.05 + Math.random() * 0.02);
+  }
+  const nMax = Math.max(...naiveTimings, 0.01);
+  const bMax = Math.max(...bcryptTimings, 0.01);
+
+  naiveChart.innerHTML = naiveTimings.map((t, i) =>
+    `<div class="timing-row">` +
+    `<span class="timing-label">${i}/9 match</span>` +
+    `<div class="bar-track" style="height: 16px;">` +
+    `<div class="timing-bar timing-bar--naive" style="width: ${(t / nMax) * 100}%"></div></div>` +
+    `<span class="timing-label">sim</span></div>`,
+  ).join('');
+  bcryptChart.innerHTML = bcryptTimings.map((t, i) =>
+    `<div class="timing-row">` +
+    `<span class="timing-label">${i}/9 match</span>` +
+    `<div class="bar-track" style="height: 16px;">` +
+    `<div class="timing-bar timing-bar--bcrypt" style="width: ${(t / bMax) * 100}%"></div></div>` +
+    `<span class="timing-label">sim</span></div>`,
+  ).join('');
+
+  if (statsEl) {
+    statsEl.innerHTML =
+      `<div class="status-display">` +
+      `<strong>⚠ Simulated / exaggerated — these bars are illustrative, not measured.</strong><br>` +
+      `The naive === staircase shows the <em>shape</em> of the leak: the more leading bytes match, the longer it runs. ` +
+      `A real leak is a few nanoseconds. Switch to “Measure real timings” to see the genuine (tiny) signal.<br>` +
+      `<span style="font-size: 0.8125rem; color: var(--color-text-3);">` +
+      `Variance — naive: <span style="color: var(--color-invalid-text);">${variance(naiveTimings).toFixed(4)}</span>, ` +
+      `constant-time: <span style="color: var(--color-valid-text);">${variance(bcryptTimings).toFixed(4)}</span> (simulated units).</span></div>`;
   }
 }
 
@@ -450,7 +734,7 @@ const algorithms: AlgorithmRow[] = [
   {
     name: 'PBKDF2', year: 2000, adaptive: true, memoryHard: false, gpuResistant: false,
     status: '⚠️ FIPS only', statusClass: 'color: var(--color-warning-text)',
-    description: 'PBKDF2 applies a PRF (typically HMAC-SHA256) iteratively. It is NIST-approved and required in FIPS environments. However, it is not memory-hard, making it vulnerable to GPU and ASIC attacks.',
+    description: 'PBKDF2 applies a PRF — a pseudorandom function, a keyed primitive whose output is indistinguishable from random, here typically HMAC-SHA256 — iteratively, thousands of times. It is NIST-approved and required in FIPS environments. However, it is not memory-hard (it needs almost no RAM), making it cheap to parallelize on GPUs and ASICs.',
   },
   {
     name: 'bcrypt', year: 1999, adaptive: true, memoryHard: 'Partial', gpuResistant: 'Partial',

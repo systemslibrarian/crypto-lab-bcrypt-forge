@@ -2,7 +2,7 @@
 
 ## What It Is
 
-bcrypt is a password hashing function designed by Niels Provos and David Mazières (1999), built on the Blowfish cipher with a deliberately slow and adaptive cost factor. It is the most widely deployed password hashing scheme in production systems, used by default in Rails, Node.js, PHP, and Linux PAM. Its adaptive cost factor allows security to be maintained as hardware improves without changing the stored hash format. The security model is one-way: hashes cannot be reversed, only verified.
+bcrypt is a password hashing function designed by Niels Provos and David Mazières (1999), built on the Blowfish cipher with a deliberately slow and adaptive cost factor. Its "cost" is literally an exponent: the expensive Eksblowfish key schedule re-mixes the password and salt into a 4 KB Blowfish state 2^cost times, so each +1 to the cost doubles the work — that iterated key setup is *why* bcrypt is intrinsically slow. It is the most widely deployed password hashing scheme in production systems, used by default in Rails, Node.js, PHP, and Linux PAM. Its adaptive cost factor allows security to be maintained as hardware improves without changing the stored hash format. The security model is one-way: hashes cannot be reversed, only verified.
 
 ## When to Use It
 
@@ -19,7 +19,14 @@ bcrypt is a password hashing function designed by Niels Provos and David Mazièr
 
 **[systemslibrarian.github.io/crypto-lab-bcrypt-forge](https://systemslibrarian.github.io/crypto-lab-bcrypt-forge/)**
 
-Six exhibits: bcrypt anatomy with color-annotated output, live hash generator with cost slider and timing, cost factor benchmark across factors 8–14, timing-safe verify with attack visualizer, algorithm comparison table (bcrypt vs Argon2id vs PBKDF2 vs MD5), and a real-world breach simulation showing plaintext vs MD5 vs bcrypt outcomes.
+Six exhibits:
+
+1. **Anatomy** — color-annotated bcrypt output (version/cost/salt/hash), plus a "Why bcrypt is slow" animation of the Eksblowfish key schedule showing the salt+password being folded into the 4 KB Blowfish state 2^cost times, and an interactive **72-byte-limit** demo where two long passwords that share a 72-byte prefix cross-verify.
+2. **Hash Generator** — live cost slider with real timing.
+3. **Benchmark** — cost factors 8–14 with a ~250 ms "login sweet spot" threshold marker so the recommended cost is visually motivated (fast enough for login, slow enough for attackers).
+4. **Verify** — timing-safe comparison framed as a *secondary* hardening (slowness + salt is the headline), with a choice between measuring real microsecond timings over thousands of trials or a clearly-labeled simulated/exaggerated leak.
+5. **Alternatives** — algorithm comparison table (bcrypt vs Argon2id vs scrypt vs PBKDF2 vs MD5) with inline definitions for terms like *timing oracle* and *PRF*.
+6. **Attack Demo** — a real-world breach simulation showing plaintext vs unsalted MD5 vs bcrypt outcomes, with alice/eve sharing a password so salting's effect is visible at a glance.
 
 Every hash is **real, computed in your browser** — never simulated. All CPU-heavy work (bcrypt, PBKDF2, MD5) runs in a **Web Worker**, so the UI stays smooth even while hashing at cost 14.
 
