@@ -13,6 +13,12 @@
   --color-surface:      #1a2030;
   --color-surface-2:    #232c40;
   --color-border:       #2a3550;
+  /* Control boundaries only (text/select inputs, secondary buttons, copy buttons,
+     panel tabs, theme toggle). Those controls are filled with --color-surface /
+     --color-surface-2, which sit at 1.06-1.17:1 against the panel or bar behind
+     them, so the border is the sole boundary and WCAG 2.1 SC 1.4.11 requires 3:1.
+     --color-border stays for decorative rules (dividers, tables, callouts). */
+  --color-border-strong: #6277ac;
   --color-border-2:     #3a4a6b;
 
   --color-text:         #e6eaf4;
@@ -74,6 +80,7 @@
   --color-surface:      #ffffff;
   --color-surface-2:    #f5f8ff;
   --color-border:       #c8d4ec;
+  --color-border-strong: #5a7ec6;
   --color-border-2:     #a0b4d8;
 
   --color-text:         #1a202c;
@@ -281,7 +288,7 @@ a:hover { text-decoration: none; }
   border-radius: 50%;
   background-color: var(--color-surface);
   color: var(--color-text);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   font-size: 1.25rem;
   cursor: pointer;
   padding: 0;
@@ -319,7 +326,7 @@ a:hover { text-decoration: none; }
   gap: var(--space-2);
   background-color: var(--color-surface);
   color: var(--color-text-2);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-bottom: none;
   border-radius: var(--radius-md) var(--radius-md) 0 0;
   padding: var(--space-2) var(--space-4);
@@ -445,7 +452,7 @@ a:hover { text-decoration: none; }
 .btn--secondary {
   background-color: var(--color-surface);
   color: var(--color-text);
-  border-color: var(--color-border);
+  border-color: var(--color-border-strong);
 }
 .btn--secondary:hover:not(:disabled) {
   border-color: var(--color-primary);
@@ -482,7 +489,7 @@ a:hover { text-decoration: none; }
 .text-input, .select-input {
   background-color: var(--color-surface);
   color: var(--color-text);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-3);
   font-size: 1rem;
@@ -565,7 +572,7 @@ a:hover { text-decoration: none; }
   right: var(--space-2);
   background-color: var(--color-surface-2);
   color: var(--color-text-2);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-2);
   font-size: 0.75rem;
