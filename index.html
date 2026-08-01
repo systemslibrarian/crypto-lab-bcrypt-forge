@@ -100,7 +100,16 @@
   /* cl-a11y-touch: WCAG 2.5.5 target size on touch pointers only, so the
      bar keeps its density on desktop where a mouse is precise. */
   @media (pointer: coarse){
-    .cl-btn,.cl-icon{min-height:44px;min-width:44px}
+    /* Height is free -- it costs no horizontal room, so every touch target
+       gets the full 44px vertically. */
+    .cl-btn,.cl-icon{min-height:44px}
+  }
+  /* Width only where the bar can afford it. Below ~380px, three 44px-wide
+     buttons plus the brand overflow the viewport, and forcing horizontal
+     scroll would trade a 2.5.5 (AAA) gain for a 1.4.10 reflow failure.
+     The buttons stay ~31px wide there, comfortably over the 24px 2.5.8 (AA) floor. */
+  @media (pointer: coarse) and (min-width: 380px){
+    .cl-btn,.cl-icon{min-width:44px}
   }
 </style>
 <a class="cl-skip-link" href="#app">Skip to content</a>
@@ -174,7 +183,7 @@
     </div>
     <aside class="cl-hero-why" aria-label="Why it matters">
       <span class="cl-hero-why-label">WHY IT MATTERS</span>
-      <p class="cl-hero-why-text">Leaked password databases are inevitable; what saves your users is how the passwords were stored. bcrypt's deliberate slowness and per-user salt turn an instant plaintext or MD5 catastrophe into weeks of attacker effort per account.</p>
+      <p class="cl-hero-why-text">Leaked password databases are inevitable; what saves your users is how the passwords were stored. bcrypt's deliberate slowness and per-user salt turn an instant plaintext or MD5 catastrophe into a per-account grind the attacker pays for one guess at a time. Panel 6 runs that attack for real and prints the measured bill.</p>
     </aside>
   </header>
 
@@ -258,7 +267,7 @@
           </p>
 
           <div class="control-row">
-            <label for="p1-eks-cost" class="control-label">Move the cost factor to see the round count:</label>
+            <label for="p1-eks-cost" class="control-label">Pick a cost factor, then run the schedule for real:</label>
             <div class="range-row">
               <input id="p1-eks-cost" type="range" min="4" max="14" value="6"
                      aria-label="Cost factor for key-schedule animation"
@@ -272,7 +281,7 @@
 
           <div class="button-row">
             <button id="p1-eks-run-btn" type="button" class="btn btn--primary">
-              Animate the key schedule
+              Run the key schedule
             </button>
           </div>
 
@@ -288,8 +297,9 @@
           </div>
 
           <div id="p1-eks-progress" class="status-display" role="status" aria-live="polite" style="margin-top: var(--space-3);">
-            Press “Animate the key schedule” to watch the salt and password get folded into the
-            Blowfish state 2<sup>cost</sup> times.
+            Press “Run the key schedule” to execute the real Eksblowfish loop at the chosen cost.
+            The grid and the round counter are driven by rounds that actually completed, and the
+            wait you sit through is the real cost — so try cost 6, then cost 14, and time them.
           </div>
         </section>
 
@@ -370,7 +380,7 @@
               <span id="p2-cost-value" class="range-value">10</span>
             </div>
             <span id="p2-timing-estimate" style="font-size: 0.8125rem; color: var(--color-text-3);">
-              Estimated time: ~100 ms
+              Estimated time: measuring on this device…
             </span>
           </div>
 
@@ -590,6 +600,15 @@
           <p style="color: var(--color-text-2); font-size: 0.875rem; margin-bottom: var(--space-4);">
             Hash the same password with bcrypt (cost 12) and PBKDF2 (100,000 rounds via WebCrypto).
           </p>
+          <div class="callout callout--warning">
+            <div class="callout__title">Read this before you read the numbers</div>
+            The two sides are not implemented alike, so the millisecond gap is not a property of the
+            algorithms. bcrypt runs here as <strong>pure JavaScript</strong> (the bcryptjs library, interpreted
+            by your browser's JS engine); PBKDF2 runs as <strong>native compiled code</strong> inside WebCrypto
+            (<code>crypto.subtle.deriveBits</code>). Native code is typically several times faster than JS for
+            identical work. Use this to see that both are deliberately slow — not to rank them. For the ranking,
+            read the work factors and the memory-hardness/GPU-resistance columns in the table above.
+          </div>
           <div class="button-row">
             <button id="p5-race-btn" type="button" class="btn btn--primary">
               Run Comparison
@@ -640,11 +659,17 @@
             Unsalted MD5 Hashes
           </div>
           <div id="p6b-table-container"></div>
+          <p style="color: var(--color-text-2); font-size: 0.8125rem; margin: var(--space-3) 0 0;">
+            The button below builds a real table: it MD5s every entry in the demo's common-password
+            wordlist, then looks each stored digest up in that table. The cells hold only the digest,
+            so an account whose password is not in the wordlist genuinely cannot be recovered.
+          </p>
           <div class="button-row" style="margin-top: var(--space-3);">
             <button id="p6b-breach-btn" type="button" class="btn btn--attack">
               Look Up in Rainbow Table
             </button>
           </div>
+          <div id="p6b-summary" aria-live="polite" style="margin-top: var(--space-3);"></div>
           <div id="p6b-callout" class="callout callout--warning" style="display: none;">
             <div class="callout__title">Impact</div>
             Rainbow tables precompute hashes for billions of common passwords.
@@ -657,22 +682,44 @@
         <div class="scenario-card" id="p6-scenario-c">
           <div class="scenario-card__title">
             <span class="scenario-card__badge scenario-card__badge--safe">Scenario C</span>
-            bcrypt Hashes (cost 12)
+            bcrypt Hashes (stored at cost <span id="p6c-cost-label">12</span>)
           </div>
+
+          <fieldset class="mode-toggle">
+            <legend class="sr-only">Stored cost factor</legend>
+            <p style="font-size: 0.8125rem; color: var(--color-text-2); margin: 0 0 var(--space-2);">
+              <strong>The cost-downgrade experiment.</strong> Pick the cost the database was hashed at,
+              then run the attack. Same wordlist, same code, same time budget — the only variable is cost.
+              Every hash and every guess below is real bcrypt; nothing is simulated or timer-driven.
+            </p>
+            <label class="mode-toggle__opt">
+              <input type="radio" name="p6c-cost" value="4" />
+              <span><strong>Cost 4</strong> — a legacy or misconfigured deployment. Fast to log in, fast to attack.</span>
+            </label>
+            <label class="mode-toggle__opt">
+              <input type="radio" name="p6c-cost" value="8" />
+              <span><strong>Cost 8</strong> — a once-reasonable default that has aged out.</span>
+            </label>
+            <label class="mode-toggle__opt">
+              <input type="radio" name="p6c-cost" value="12" checked />
+              <span><strong>Cost 12</strong> — a current recommendation. Re-hashing takes a moment; so does each guess.</span>
+            </label>
+          </fieldset>
+
           <div id="p6c-table-container"></div>
           <div class="button-row" style="margin-top: var(--space-3);">
             <button id="p6c-breach-btn" type="button" class="btn btn--attack">
-              Attempt Crack
+              Run Real Dictionary Attack
             </button>
           </div>
           <div id="p6c-progress" style="display: none;">
             <div class="progress-bar"><div class="progress-bar__fill" id="p6c-progress-fill"></div></div>
             <div id="p6c-progress-text" style="font-size: 0.8125rem; color: var(--color-text-2); margin-top: var(--space-2);" aria-live="polite"></div>
           </div>
+          <div id="p6c-summary" aria-live="polite" style="margin-top: var(--space-3);"></div>
           <div id="p6c-callout" class="callout callout--valid" style="display: none;">
             <div class="callout__title">Impact</div>
-            With bcrypt, a breached database buys your users time —
-            potentially weeks or months — to change their passwords.
+            <span id="p6c-impact"></span>
           </div>
         </div>
       </div>
