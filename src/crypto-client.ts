@@ -13,11 +13,36 @@ interface WorkerReply {
   result?: unknown;
   timeMs?: number;
   error?: string;
+  progress?: unknown;
 }
 
 interface Pending {
   resolve: (value: { result: unknown; timeMs: number }) => void;
   reject: (reason: Error) => void;
+  onProgress?: (p: unknown) => void;
+}
+
+/** Streamed by the `schedule` op — every field is a real, executed round count. */
+export interface ScheduleProgress {
+  round: number;
+  totalRounds: number;
+  elapsedMs: number;
+}
+
+/** Streamed by the `crack` op — every attempt counted here really ran. */
+export interface CrackProgress {
+  attempts: number;
+  wordsTried: number;
+  elapsedMs: number;
+  cracked: number;
+}
+
+export interface CrackResult {
+  cracked: { username: string; password: string; position: number }[];
+  attempts: number;
+  /** True when the whole candidate list ran (or every target fell) before the budget expired. */
+  exhausted: boolean;
+  msPerAttempt: number;
 }
 
 let worker: Worker | null = null;
@@ -28,9 +53,14 @@ function getWorker(): Worker {
   if (worker) return worker;
   worker = new Worker(new URL('./crypto-worker.ts', import.meta.url), { type: 'module' });
   worker.onmessage = (e: MessageEvent<WorkerReply>) => {
-    const { id, ok, result, timeMs, error } = e.data;
+    const { id, ok, result, timeMs, error, progress } = e.data;
     const p = pending.get(id);
     if (!p) return;
+    // Intermediate updates keep the request open.
+    if (progress !== undefined) {
+      p.onProgress?.(progress);
+      return;
+    }
     pending.delete(id);
     if (ok) p.resolve({ result, timeMs: timeMs ?? 0 });
     else p.reject(new Error(error ?? 'Worker error'));
@@ -44,10 +74,13 @@ function getWorker(): Worker {
   return worker;
 }
 
-function call(msg: Record<string, unknown>): Promise<{ result: unknown; timeMs: number }> {
+function call(
+  msg: Record<string, unknown>,
+  onProgress?: (p: unknown) => void,
+): Promise<{ result: unknown; timeMs: number }> {
   const id = ++seq;
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
+    pending.set(id, { resolve, reject, onProgress });
     getWorker().postMessage({ ...msg, id });
   });
 }
@@ -75,5 +108,39 @@ export const cryptoClient = {
   async pbkdf2(password: string, iterations: number): Promise<{ timeMs: number }> {
     const { timeMs } = await call({ op: 'pbkdf2', password, iterations });
     return { timeMs };
+  },
+
+  /**
+   * Run the real Eksblowfish key schedule at `cost`, streaming genuine
+   * round-completion progress. Resolves with the resulting hash and the true
+   * wall-clock duration — which is why the wait doubles with every +1 to cost.
+   */
+  async schedule(
+    password: string,
+    cost: number,
+    onProgress: (p: ScheduleProgress) => void,
+  ): Promise<{ hash: string; timeMs: number }> {
+    const { result, timeMs } = await call(
+      { op: 'schedule', password, cost },
+      (p) => onProgress(p as ScheduleProgress),
+    );
+    return { hash: result as string, timeMs };
+  },
+
+  /**
+   * Run a real dictionary attack: every attempt is an actual bcrypt compare
+   * against an actual stored hash, capped by a wall-clock budget.
+   */
+  async crack(
+    targets: { username: string; hash: string }[],
+    candidates: readonly string[],
+    budgetMs: number,
+    onProgress: (p: CrackProgress) => void,
+  ): Promise<CrackResult & { timeMs: number }> {
+    const { result, timeMs } = await call(
+      { op: 'crack', targets, candidates: [...candidates], budgetMs },
+      (p) => onProgress(p as CrackProgress),
+    );
+    return { ...(result as CrackResult), timeMs };
   },
 };

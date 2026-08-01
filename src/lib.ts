@@ -52,6 +52,60 @@ export function variance(arr: number[]): number {
   return arr.reduce((sum, v) => sum + (v - mean) ** 2, 0) / arr.length;
 }
 
+// ─── Attacker dictionary (Exhibit 6) ──────────────────────────────
+
+/**
+ * A real common-password list, ordered roughly by published real-world
+ * frequency (the familiar top-of-the-leak ordering: `123456`, `password`,
+ * `qwerty`, …). Slurs and sexually explicit entries that appear in the raw
+ * published lists have been removed, so positions are approximate rather than
+ * exact leak ranks.
+ *
+ * This is the ACTUAL list both attacks in Exhibit 6 run against:
+ *  - Scenario B precomputes the MD5 of every entry — that is the rainbow table.
+ *  - Scenario C feeds every entry to bcrypt.compare against the stored hashes.
+ *
+ * It is deliberately small enough to finish in a browser tab. The UI reports
+ * the true entry count and the measured hash rate, and extrapolates to a
+ * realistic 100,000-word list from the *measured* rate rather than a constant.
+ */
+export const COMMON_PASSWORDS: readonly string[] = [
+  '123456', 'password', '12345678', 'qwerty', '123456789', '12345', '1234',
+  '111111', '1234567', 'dragon', '123123', 'baseball', 'abc123', 'football',
+  'monkey', 'letmein', 'shadow', 'master', '666666', 'qwertyuiop',
+  '123321', 'mustang', '1234567890', 'michael', '654321', 'superman',
+  '1qaz2wsx', '7777777', '121212', '000000', 'qazwsx', '123qwe', 'killer',
+  'trustno1', 'jordan', 'jennifer', 'zxcvbnm', 'asdfgh', 'hunter', 'buster',
+  'soccer', 'harley', 'batman', 'andrew', 'tigger', 'sunshine', 'iloveyou',
+  '2000', 'charlie', 'robert', 'thomas', 'hockey', 'ranger', 'daniel',
+  'starwars', 'klaster', '112233', 'george', 'computer', 'michelle',
+  'jessica', 'pepper', '1111', 'zxcvbn', '555555', '11111111', '131313',
+  'freedom', '777777', 'pass', 'maggie', '159753', 'aaaaaa', 'ginger',
+  'princess', 'joshua', 'cheese', 'amanda', 'summer', 'love', 'ashley',
+  '6969', 'nicole', 'chelsea', 'matthew', 'access', 'yankees', '987654321',
+  'dallas', 'austin', 'thunder', 'taylor', 'matrix', 'william', 'corvette',
+  'hello', 'martin', 'heather', 'secret', 'merlin', 'diamond', '1234qwer',
+  'hammer', 'silver', '222222', '88888888', 'anthony', 'justin', 'test',
+  'bailey', 'q1w2e3r4t5', 'patrick', 'internet', 'scooter', 'orange',
+  '11111', 'golfer', 'cookie', 'richard', 'samantha', 'bigdog', 'guitar',
+  'jackson', 'whatever', 'mickey', 'chicken', 'sparky', 'snoopy',
+  'maverick', 'phoenix', 'camaro', 'peanut', 'morgan', 'welcome', 'falcon',
+  'cowboy', 'ferrari', 'samsung', 'andrea', 'smokey', 'steelers', 'joseph',
+  'mercedes', 'dakota', 'arsenal', 'eagles', 'melissa', 'boomer', 'booboo',
+  'spider', 'password123', 'nascar', 'monster', 'tigers', 'yellow',
+  '123123123', 'gateway', 'marina', 'diablo', 'bulldog', 'qwer1234',
+  'compaq', 'purple', 'banana', 'junior', 'hannah', '123654', 'porsche',
+  'lakers', 'iceman', 'money', 'cowboys', '987654', 'london', 'tennis',
+  '999999', 'ncc1701', 'coffee', 'scooby', '0000', 'miller', 'boston',
+  'q1w2e3r4', 'brandon', 'yamaha', 'chester', 'mother', 'forever', 'johnny',
+  'edward', '333333', 'oliver', 'redsox', 'player', 'nikita', 'knight',
+  'fender', 'barney', 'midnight', 'please', 'brandy', 'chicago', 'jasper',
+  'enter', 'rachel', 'chris', 'steven', 'winner', 'adidas', 'victoria',
+  'natasha', '1q2w3e4r', 'jasmine', 'winter', 'prince', 'marine', 'fishing',
+  'cocacola', 'casper', 'james', '232323', 'raiders', 'passw0rd',
+  'letmein123', 'admin', 'root', 'welcome1', 'password1', 'qwerty123',
+];
+
 // ─── MD5 (educational use only — Exhibit 6) ───────────────────────
 
 /**

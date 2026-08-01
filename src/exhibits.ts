@@ -7,7 +7,7 @@
  */
 
 import { cryptoClient } from './crypto-client.ts';
-import { parseBcryptHash, isBcryptHash, formatDuration, variance } from './lib.ts';
+import { parseBcryptHash, isBcryptHash, formatDuration, variance, COMMON_PASSWORDS } from './lib.ts';
 
 // ─── Helpers ──────────────────────────────────────────────────────
 
@@ -69,9 +69,6 @@ function wirePasswordToggle(input: HTMLInputElement, toggle: HTMLButtonElement |
   });
 }
 
-// Store benchmark results for cross-exhibit use (Exhibit 6 uses Exhibit 3 data)
-let benchmarkResults: { cost: number; timeMs: number }[] = [];
-
 // ═══════════════════════════════════════════════════════════════════
 // EXHIBIT 1 — What bcrypt actually is
 // ═══════════════════════════════════════════════════════════════════
@@ -111,18 +108,18 @@ export function initExhibit1(): void {
 }
 
 /**
- * "Why bcrypt is slow" — an honest visualization of Eksblowfish's
- * `expensive_key_schedule`. This does NOT fake a hash: it mirrors the real
- * control flow of bcrypt's setup (bcrypt_setup → EksBlowfishSetup):
+ * "Why bcrypt is slow" — the REAL Eksblowfish `expensive_key_schedule`,
+ * executed live, with the visualization driven by its genuine progress.
  *
- *   1. Blowfish is initialized (P-array + 4 S-boxes = 4 KB of state).
- *   2. The state is keyed once with the salt and once with the password.
- *   3. Then the loop runs 2^cost times, each iteration re-keying the state
- *      alternately with the salt and the password. THAT loop is "the cost".
+ * Pressing the button runs bcryptjs's async hash at the chosen cost in the
+ * worker. That runs the actual loop — `_key(password); _key(salt)` repeated
+ * 2^cost times over the P-array and 4 KB of S-boxes — and reports how many
+ * rounds have truly completed between ~100 ms work slices. We paint the grid
+ * and the round counter from those reports only.
  *
- * We animate a representative sample of the S-box words being rewritten and
- * report the true round count (2^cost). The real hashing still happens in the
- * worker via bcryptjs; this panel explains the mechanism, it does not replace it.
+ * Consequently the wait genuinely scales with cost: cost 6 finishes in a few
+ * milliseconds, cost 14 takes ~256x as long. The clock, not a caption, is the
+ * lesson. Every round number on screen was executed.
  */
 function initEksSchedule(): void {
   const slider = $('p1-eks-cost') as HTMLInputElement | null;
@@ -156,45 +153,73 @@ function initEksSchedule(): void {
   });
   renderRounds(parseInt(slider.value, 10));
 
-  let animating = false;
+  // Real measured durations, keyed by cost, so the panel can show how much the
+  // wait actually grew rather than asserting a ratio.
+  const measured = new Map<number, number>();
+
+  let running = false;
   runBtn.addEventListener('click', async () => {
-    if (animating) return;
-    animating = true;
+    if (running) return;
+    running = true;
     runBtn.disabled = true;
     if (stageEl) stageEl.classList.add('eks-stage--active');
 
     const cost = parseInt(slider.value, 10);
     const totalRounds = 2 ** cost;
-    // Show a fixed number of visual frames regardless of cost, but always report
-    // the TRUE round count so the number — not the animation length — carries the
-    // lesson (cost 14 would be 16,384 real rounds; we don't wait for all of them).
-    const FRAMES = Math.min(totalRounds, 40);
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const frameMs = reduced ? 0 : 45;
+    let frame = 0;
 
-    for (let f = 0; f < FRAMES; f++) {
-      const usingSalt = f % 2 === 0; // real Eksblowfish alternates salt / key
-      // Rewrite a scatter of state cells this round.
-      for (let k = 0; k < 10; k++) {
-        const cell = cells[Math.floor(Math.random() * cells.length)];
-        cell.className = `eks-cell eks-cell--hot ${usingSalt ? 'eks-cell--salt' : 'eks-cell--pw'}`;
-      }
-      const shownRound = Math.round(((f + 1) / FRAMES) * totalRounds);
-      progressEl.innerHTML =
-        `Round <strong>${shownRound.toLocaleString()}</strong> of <strong>${totalRounds.toLocaleString()}</strong> — ` +
-        `re-mixing the <span style="color: ${usingSalt ? 'var(--color-salt)' : 'var(--color-version)'};">` +
-        `${usingSalt ? 'salt' : 'password'}</span> into the 4&nbsp;KB Blowfish state.`;
-      if (frameMs) await new Promise(r => setTimeout(r, frameMs));
-    }
-
-    cells.forEach(c => { c.className = 'eks-cell eks-cell--done'; });
     progressEl.innerHTML =
-      `Done: the key schedule ran <strong>2<sup>${cost}</sup> = ${totalRounds.toLocaleString()}</strong> rounds. ` +
-      `Each +1 to cost <strong>doubles</strong> that count — this is the “work” that “cost doubles.” ` +
-      `The finished 4&nbsp;KB state becomes the Blowfish key that encrypts bcrypt's magic string into the hash.`;
+      `<span class="spinner"></span> Running the real key schedule at cost ${cost} ` +
+      `(<strong>${totalRounds.toLocaleString()}</strong> rounds)…`;
 
-    runBtn.disabled = false;
-    animating = false;
+    try {
+      // Every repaint below is triggered by a report of rounds that really ran.
+      const { timeMs } = await cryptoClient.schedule('EksblowfishDemoPassword', cost, (p) => {
+        const usingSalt = frame % 2 === 0; // the loop alternates key / salt
+        frame++;
+        for (let k = 0; k < 10; k++) {
+          const cell = cells[(frame * 7 + k * 11) % cells.length];
+          cell.className = `eks-cell eks-cell--hot ${usingSalt ? 'eks-cell--salt' : 'eks-cell--pw'}`;
+        }
+        progressEl.innerHTML =
+          `Round <strong>${p.round.toLocaleString()}</strong> of ` +
+          `<strong>${p.totalRounds.toLocaleString()}</strong> completed ` +
+          `(${p.elapsedMs.toFixed(0)} ms elapsed) — re-mixing the ` +
+          `<span style="color: var(--color-salt);">salt</span> and ` +
+          `<span style="color: var(--color-version);">password</span> ` +
+          `into the 4&nbsp;KB Blowfish state.`;
+      });
+
+      measured.set(cost, timeMs);
+      cells.forEach(c => { c.className = 'eks-cell eks-cell--done'; });
+
+      // Compare against another cost the user has actually run, if any.
+      let comparison = '';
+      const others = [...measured.entries()].filter(([c]) => c !== cost);
+      if (others.length > 0) {
+        const [otherCost, otherMs] = others.reduce((a, b) =>
+          Math.abs(a[0] - cost) > Math.abs(b[0] - cost) ? a : b);
+        const ratio = timeMs / otherMs;
+        comparison =
+          ` That is <strong>${ratio >= 1 ? `${ratio.toFixed(1)}×` : `1/${(1 / ratio).toFixed(1)}×`}</strong> ` +
+          `your measured cost-${otherCost} run (${otherMs.toFixed(0)} ms) — ` +
+          `theory says 2<sup>${cost - otherCost}</sup> = ${(2 ** (cost - otherCost)).toLocaleString()}×.`;
+      } else {
+        comparison = ' Move the slider and run it again to compare two measured costs directly.';
+      }
+
+      progressEl.innerHTML =
+        `Done in <strong>${timeMs.toFixed(0)} ms</strong> of real work: the key schedule executed all ` +
+        `<strong>2<sup>${cost}</sup> = ${totalRounds.toLocaleString()}</strong> rounds, and the finished ` +
+        `4&nbsp;KB state encrypted bcrypt's magic string into a hash.` + comparison;
+    } catch (err) {
+      progressEl.innerHTML =
+        `<span style="color: var(--color-invalid-text);">Key schedule failed: ` +
+        `${escapeHtml(String(err))}</span>`;
+    } finally {
+      runBtn.disabled = false;
+      running = false;
+    }
   });
 }
 
@@ -320,19 +345,34 @@ export function initExhibit2(): void {
 
   wirePasswordToggle(passwordInput, passwordToggle);
 
-  const estimateTimes: Record<number, string> = {
-    4: '~1 ms', 5: '~2 ms', 6: '~4 ms', 7: '~8 ms',
-    8: '~15 ms', 9: '~30 ms', 10: '~60 ms', 11: '~120 ms',
-    12: '~250 ms', 13: '~500 ms', 14: '~1 s',
+  // The estimate is MEASURED, not tabulated. We time one real cost-10 hash on
+  // this device, then scale it by 2^(cost-10) — bcrypt's defining property. The
+  // markup ships saying "measuring…" so no stale constant can contradict this.
+  let msAtCost10 = 0;
+
+  const formatMs = (ms: number): string =>
+    ms >= 1000 ? `${(ms / 1000).toFixed(1)} s`
+      : ms >= 10 ? `${Math.round(ms)} ms`
+        : `${ms.toFixed(1)} ms`;
+
+  const renderEstimate = (): void => {
+    if (!timingEstimate) return;
+    const cost = parseInt(costSlider.value, 10);
+    timingEstimate.textContent = msAtCost10 === 0
+      ? 'Estimated time: measuring on this device…'
+      : `Estimated time: ~${formatMs(msAtCost10 * 2 ** (cost - 10))} ` +
+        `(from a measured ${formatMs(msAtCost10)} at cost 10 on this device)`;
   };
+
+  cryptoClient.hash('CostCalibrationProbe', 10)
+    .then(({ timeMs }) => { msAtCost10 = timeMs; renderEstimate(); })
+    .catch(() => { /* leave the estimate reading "measuring…" rather than inventing one */ });
 
   costSlider.addEventListener('input', () => {
     const cost = parseInt(costSlider.value, 10);
     if (costValue) costValue.textContent = String(cost);
     costSlider.setAttribute('aria-valuenow', String(cost));
-    if (timingEstimate) {
-      timingEstimate.textContent = `Estimated time: ${estimateTimes[cost] ?? '~???'}`;
-    }
+    renderEstimate();
   });
 
   hashBtn.addEventListener('click', async () => {
@@ -362,14 +402,24 @@ export function initExhibit2(): void {
       if (timingEl) timingEl.textContent = `Computed in ${timeMs.toFixed(1)} ms`;
 
       if (costBarEl) {
+        // Work grows as 2^cost, so a linear bar saturates instantly: at a linear
+        // scale clamped to 100%, cost 13 (8x) and cost 14 (16x) drew identically.
+        // The axis is therefore log2 — one slider step = one equal bar step —
+        // which keeps every cost from 4 to 14 distinguishable. Labelled as such.
+        const MIN_COST = 4;
+        const MAX_COST = 14;
         const ratio = 2 ** (cost - 10);
-        const barWidth = Math.min(100, Math.max(3, ratio * 20));
+        const barWidth = Math.max(3, ((cost - MIN_COST) / (MAX_COST - MIN_COST)) * 100);
         const ratioLabel = ratio >= 1 ? `${ratio}×` : `1/${Math.round(1 / ratio)}×`;
         costBarEl.innerHTML =
           `<div style="font-size: 0.8125rem; color: var(--color-text-3); margin-bottom: var(--space-1);">` +
-          `Relative to cost 10 (baseline): <strong style="color: var(--color-text);">${ratioLabel}</strong></div>` +
+          `Work relative to cost 10 (baseline): <strong style="color: var(--color-text);">${ratioLabel}</strong></div>` +
           `<div class="bar-track"><div class="bar-fill ${cost < 10 ? 'bar-fill--danger' : 'bar-fill--safe'}" ` +
-          `style="width: ${barWidth}%"></div></div>`;
+          `style="width: ${barWidth}%"></div></div>` +
+          `<div style="display: flex; justify-content: space-between; font-size: 0.6875rem; ` +
+          `color: var(--color-text-3); margin-top: 2px;">` +
+          `<span>cost ${MIN_COST} (1/64×)</span><span>log₂ scale — each step doubles the work</span>` +
+          `<span>cost ${MAX_COST} (16×)</span></div>`;
       }
     } catch (err) {
       resultEl.innerHTML =
@@ -399,7 +449,6 @@ export function initExhibit3(): void {
     chartEl.innerHTML = '';
     if (crackingEl) crackingEl.innerHTML = '';
 
-    benchmarkResults = [];
     const password = 'BenchmarkPassword2024!';
     const results: { cost: number; timeMs: number }[] = [];
     let baseTime = 0;
@@ -411,7 +460,6 @@ export function initExhibit3(): void {
       results.push({ cost, timeMs });
     }
 
-    benchmarkResults = results;
     const maxTime = Math.max(...results.map(r => r.timeMs));
 
     // The login "sweet spot": ~250 ms is the classic threshold below which a
@@ -449,19 +497,29 @@ export function initExhibit3(): void {
     if (thresholdsEl) thresholdsEl.hidden = false;
 
     if (crackingEl) {
+      // The attacker model is the single biggest assumption in these numbers, so
+      // it is stated on screen — every figure below is directly proportional to it.
+      const gpuParallelism = 10_000;
+      const keyspace = 36 ** 8 / 2; // expected attempts = half the keyspace
+      const baseline = results[0];
+      const baselineRate = (1000 / baseline.timeMs) * gpuParallelism;
+
       let crackHtml =
         '<div style="margin-top: var(--space-4); padding: var(--space-4); background-color: var(--color-surface); ' +
         'border: 1px solid var(--color-border); border-radius: var(--radius-md);">' +
-        '<div style="font-weight: 700; color: var(--color-text); margin-bottom: var(--space-3);">' +
-        'Single-GPU brute-force of one password (8-char lowercase + digit, ~2.8 trillion candidates)</div>';
+        '<div style="font-weight: 700; color: var(--color-text); margin-bottom: var(--space-2);">' +
+        'Single-GPU brute-force of one password (8-char lowercase + digit, ~2.8 trillion candidates)</div>' +
+        '<div class="status-display" style="font-size: 0.75rem; margin-bottom: var(--space-3);">' +
+        '<strong>Attacker model (the assumption driving every number below):</strong><br>' +
+        `one high-end GPU running <strong>${gpuParallelism.toLocaleString()}×</strong> the single-thread rate ` +
+        'you just measured in this tab. Bcryptjs in a browser is far slower than optimised native code, ' +
+        `so treat this multiplier as a rough stand-in, not a benchmark. At cost ${baseline.cost} that works out to ` +
+        `~${Math.round(baselineRate).toLocaleString()} guesses/second. ` +
+        `Halve the multiplier and every duration below doubles.</div>`;
 
-      // A single high-end GPU does the work you just measured, but massively
-      // parallel. Assume ~10,000× your single-thread rate as a rough proxy.
-      const gpuParallelism = 10_000;
       for (const r of results) {
         const yourHashesPerSec = 1000 / r.timeMs;
         const attackerHashesPerSec = yourHashesPerSec * gpuParallelism;
-        const keyspace = 36 ** 8 / 2; // expected attempts = half the keyspace
         const seconds = keyspace / attackerHashesPerSec;
         crackHtml +=
           `<div style="display: flex; justify-content: space-between; padding: var(--space-1) 0; ` +
@@ -820,7 +878,19 @@ export function initExhibit5(): void {
           `<div style="display: flex; justify-content: space-between;">` +
           `<span style="font-weight: 700;">PBKDF2 (100k rounds):</span>` +
           `<span style="font-family: var(--font-mono); color: var(--color-warning-text);">${pbkdf2Time.toFixed(1)} ms</span></div>` +
-          `</div>`;
+          `</div>` +
+          // Without this the gap reads as a property of the algorithms. It is not:
+          // one side is interpreted JavaScript, the other is compiled browser code.
+          `<div class="status-display" style="font-size: 0.75rem; margin-top: var(--space-2);">` +
+          `<strong>⚠ This is not an apples-to-apples algorithm comparison.</strong> ` +
+          `bcrypt runs here as <strong>pure JavaScript</strong> (the bcryptjs library, interpreted by your ` +
+          `browser's JS engine). PBKDF2 runs as <strong>native compiled code</strong> inside WebCrypto ` +
+          `(<code>crypto.subtle.deriveBits</code>). Native implementations are typically several times faster ` +
+          `than JS for the same work, so a large part of the ${bcryptTime > pbkdf2Time ? 'gap above' : 'result above'} ` +
+          `is implementation, not design. Compare <em>work factors</em> (cost 12 = 4,096 key expansions vs ` +
+          `100,000 HMAC iterations) and the properties in the table above — memory-hardness and GPU resistance — ` +
+          `rather than these millisecond figures. The one thing the clock does show honestly is that both are ` +
+          `deliberately slow.</div>`;
       } catch (err) {
         raceResult.innerHTML = `<div class="status-display">Comparison failed: ${escapeHtml(String(err))}</div>`;
       } finally {
@@ -849,7 +919,16 @@ const DEMO_USERS: DemoUser[] = [
   { username: 'frank', password: 'dragon' },
   { username: 'grace', password: 'iloveyou' },
   { username: 'heidi', password: 'monkey' },
+  // Not in COMMON_PASSWORDS. Both attacks below genuinely fail on this account,
+  // which is what makes their success on the other eight mean something.
+  { username: 'ivan', password: 'tR7#qLp2$Wm9zVx4' },
 ];
+
+/** Wall-clock ceiling on the real dictionary attack, so a tab can never wedge. */
+const CRACK_BUDGET_MS = 12_000;
+
+/** A realistic full-size wordlist, used only for clearly-labelled extrapolation. */
+const REALISTIC_WORDLIST = 100_000;
 
 export function initExhibit6(): void {
   const aContainer = $('p6a-table-container');
@@ -891,6 +970,15 @@ function initScenarioA(container: HTMLElement, breachBtn: HTMLButtonElement | nu
   }
 }
 
+/**
+ * Scenario B — a REAL rainbow table.
+ *
+ * On click we MD5 every entry in `COMMON_PASSWORDS` (the same list the bcrypt
+ * attack uses), build a digest → plaintext map, then look up each account's
+ * displayed digest. The cells carry only the digest, never the plaintext, so a
+ * miss is a genuine miss: `ivan`'s password is not in the list and the table
+ * says so rather than revealing anything.
+ */
 async function initScenarioB(container: HTMLElement, breachBtn: HTMLButtonElement | null): Promise<void> {
   const usersWithMd5 = await Promise.all(
     DEMO_USERS.map(async u => ({ ...u, md5Hash: await cryptoClient.md5(u.password) })),
@@ -900,9 +988,10 @@ async function initScenarioB(container: HTMLElement, breachBtn: HTMLButtonElemen
     '<table class="user-table" aria-label="MD5 hash storage database">' +
     '<thead><tr><th scope="col">User</th><th scope="col">MD5 Hash</th><th scope="col">Cracked?</th></tr></thead><tbody>';
   for (const u of usersWithMd5) {
+    // NOTE: the cell knows the digest only. Reveal must come from a real lookup.
     html += `<tr><td>${escapeHtml(u.username)}</td>` +
       `<td>${escapeHtml(u.md5Hash)}</td>` +
-      `<td class="p6b-crack" data-pw="${escapeHtml(u.password)}">—</td></tr>`;
+      `<td class="p6b-crack" data-hash="${escapeHtml(u.md5Hash)}">—</td></tr>`;
   }
   html += '</tbody></table></div>';
   container.innerHTML = html;
@@ -917,90 +1006,241 @@ async function initScenarioB(container: HTMLElement, breachBtn: HTMLButtonElemen
   }
 
   if (breachBtn) {
+    const summaryEl = $('p6b-summary');
     breachBtn.addEventListener('click', async () => {
       breachBtn.disabled = true;
-      breachBtn.innerHTML = '<span class="spinner"></span> Looking up…';
+      breachBtn.innerHTML = '<span class="spinner"></span> Building the table…';
 
-      const cells = container.querySelectorAll<HTMLElement>('.p6b-crack');
-      for (const cell of cells) {
-        await new Promise(r => setTimeout(r, 180));
-        cell.textContent = cell.dataset.pw ?? '';
-        cell.classList.add('revealed');
+      // 1. Actually precompute the table: MD5 of every word in the list.
+      const t0 = performance.now();
+      const digests = await Promise.all(COMMON_PASSWORDS.map(w => cryptoClient.md5(w)));
+      const table = new Map<string, string>();
+      digests.forEach((d, i) => { if (!table.has(d)) table.set(d, COMMON_PASSWORDS[i]); });
+      const buildMs = performance.now() - t0;
+
+      // 2. Actually look each stored digest up. No fallback reveal on a miss.
+      const t1 = performance.now();
+      let hits = 0;
+      let misses = 0;
+      container.querySelectorAll<HTMLElement>('.p6b-crack').forEach(cell => {
+        const found = table.get(cell.dataset.hash ?? '');
+        if (found === undefined) {
+          misses++;
+          cell.textContent = 'not in table';
+          cell.classList.add('safe');
+        } else {
+          hits++;
+          cell.textContent = found;
+          cell.classList.add('revealed');
+        }
+      });
+      const lookupMs = performance.now() - t1;
+
+      if (summaryEl) {
+        summaryEl.innerHTML =
+          `<div class="status-display">` +
+          `Precomputed <strong>${table.size.toLocaleString()}</strong> MD5 digests in ` +
+          `<strong>${buildMs.toFixed(0)} ms</strong>, then recovered <strong>${hits}</strong> of ` +
+          `${DEMO_USERS.length} passwords by table lookup in <strong>${lookupMs.toFixed(1)} ms</strong>. ` +
+          (misses > 0
+            ? `<span style="color: var(--color-valid-text);">${misses} account(s) survived — ` +
+              `their password is not in the wordlist, and a rainbow table can only return what was put into it.</span> `
+            : '') +
+          `<span style="font-size: 0.8125rem; color: var(--color-text-3);">Real attackers precompute billions of ` +
+          `entries once and reuse them against every unsalted breach forever. The lookup itself is a hash-map hit — ` +
+          `there is no per-account work at all, which is exactly what a salt destroys.</span></div>`;
       }
 
-      breachBtn.textContent = 'All Cracked!';
+      breachBtn.textContent = misses > 0 ? `${hits} of ${DEMO_USERS.length} Cracked` : 'All Cracked!';
       const callout = $('p6b-callout');
       if (callout) callout.style.display = '';
     });
   }
 }
 
+/**
+ * Scenario C — a REAL dictionary attack, plus the cost-downgrade experiment.
+ *
+ * Nothing here is on a timer. Picking a cost re-hashes all accounts at that
+ * cost with real bcrypt; pressing the button feeds every word of
+ * `COMMON_PASSWORDS` to real `bcrypt.compare` against those real hashes, and
+ * reports the attempts that actually executed and the rate actually achieved.
+ *
+ * That makes the cost factor visceral: at cost 4 the whole list runs in a
+ * couple of seconds and nearly every account falls; at cost 12 the same list
+ * barely starts. The extrapolation to a 100,000-word list is computed from the
+ * MEASURED rate of this run, so no constant can drift away from what happened.
+ */
 async function initScenarioC(container: HTMLElement, breachBtn: HTMLButtonElement | null): Promise<void> {
-  // Render the table immediately with placeholders, then fill each hash in as
-  // the worker produces it — the visible drip-feed *is* the lesson: cost-12
-  // bcrypt is slow even to generate.
-  let html = '<div class="table-scroll" tabindex="0" role="region" aria-label="bcrypt hash database (scrollable)">' +
-    '<table class="user-table" aria-label="bcrypt hash storage database">' +
-    '<thead><tr><th scope="col">User</th><th scope="col">bcrypt Hash</th><th scope="col">Cracked?</th></tr></thead><tbody>';
-  for (const u of DEMO_USERS) {
-    html += `<tr><td>${escapeHtml(u.username)}</td>` +
-      `<td class="p6c-hash" id="p6c-hash-${escapeHtml(u.username)}"><span class="spinner"></span> hashing…</td>` +
-      `<td class="p6c-crack safe">Protected</td></tr>`;
-  }
-  html += '</tbody></table></div>';
-  container.innerHTML = html;
+  let storedCost = 12;
+  let stored: { username: string; hash: string }[] = [];
+  let hashing = false;
 
-  for (const u of DEMO_USERS) {
-    const { hash } = await cryptoClient.hash(u.password, 12);
-    const cell = $(`p6c-hash-${u.username}`);
-    if (cell) cell.textContent = hash;
-  }
+  const costRadios = Array.from(
+    document.querySelectorAll<HTMLInputElement>('input[name="p6c-cost"]'),
+  );
+  const summaryEl = $('p6c-summary');
+  const progressEl = $('p6c-progress');
+  const fillEl = $('p6c-progress-fill');
+  const textEl = $('p6c-progress-text');
+  const costLabelEl = $('p6c-cost-label');
 
-  container.insertAdjacentHTML('beforeend',
-    `<div style="font-size: 0.8125rem; color: var(--color-valid-text); margin-top: var(--space-2);">` +
-    `✓ Notice: alice and eve share the same password, but their bcrypt hashes are completely different — each gets a unique salt.</div>`);
+  /** Rebuild the stored-hash table with real bcrypt hashes at `storedCost`. */
+  const rehash = async (): Promise<void> => {
+    hashing = true;
+    if (breachBtn) breachBtn.disabled = true;
+    costRadios.forEach(r => { r.disabled = true; });
+    if (costLabelEl) costLabelEl.textContent = String(storedCost);
 
-  if (breachBtn) {
-    breachBtn.addEventListener('click', () => {
-      breachBtn.disabled = true;
-      breachBtn.innerHTML = '<span class="spinner"></span> Cracking…';
+    let html = '<div class="table-scroll" tabindex="0" role="region" aria-label="bcrypt hash database (scrollable)">' +
+      '<table class="user-table" aria-label="bcrypt hash storage database">' +
+      '<thead><tr><th scope="col">User</th><th scope="col">bcrypt Hash</th><th scope="col">Cracked?</th></tr></thead><tbody>';
+    for (const u of DEMO_USERS) {
+      html += `<tr><td>${escapeHtml(u.username)}</td>` +
+        `<td class="p6c-hash" id="p6c-hash-${escapeHtml(u.username)}"><span class="spinner"></span> hashing…</td>` +
+        `<td class="p6c-crack safe" id="p6c-crack-${escapeHtml(u.username)}">not attempted</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
 
-      const progressEl = $('p6c-progress');
-      const fillEl = $('p6c-progress-fill');
-      const textEl = $('p6c-progress-text');
-      if (progressEl) progressEl.style.display = '';
+    // The visible drip-feed is the lesson: at cost 12 bcrypt is slow even to
+    // generate; at cost 4 the whole table appears at once.
+    stored = [];
+    let totalMs = 0;
+    for (const u of DEMO_USERS) {
+      const { hash, timeMs } = await cryptoClient.hash(u.password, storedCost);
+      totalMs += timeMs;
+      stored.push({ username: u.username, hash });
+      const cell = $(`p6c-hash-${u.username}`);
+      if (cell) cell.textContent = hash;
+    }
 
-      const timePerHash = benchmarkResults.find(r => r.cost === 12)?.timeMs ?? 250;
-      const dictionarySize = 100_000;
-      const totalSeconds = (dictionarySize * timePerHash) / 1000;
-      const timeStr = formatDuration(totalSeconds);
+    container.insertAdjacentHTML('beforeend',
+      `<div style="font-size: 0.8125rem; color: var(--color-valid-text); margin-top: var(--space-2);">` +
+      `✓ alice and eve share the same password, but their bcrypt hashes are completely different — each gets a ` +
+      `unique salt. Generating all ${DEMO_USERS.length} hashes at cost ${storedCost} took ` +
+      `<strong>${totalMs.toFixed(0)} ms</strong> of real work.</div>`);
 
-      let elapsedMs = 0;
-      const totalMs = totalSeconds * 1000;
-      const interval = window.setInterval(() => {
-        elapsedMs += 100;
-        const progress = Math.min((elapsedMs / totalMs) * 100, 100);
-        if (fillEl) (fillEl as HTMLElement).style.width = `${progress}%`;
+    hashing = false;
+    if (breachBtn) breachBtn.disabled = false;
+    costRadios.forEach(r => { r.disabled = false; });
+  };
+
+  costRadios.forEach(radio => {
+    radio.addEventListener('change', () => {
+      if (!radio.checked || hashing) return;
+      storedCost = parseInt(radio.value, 10);
+      if (progressEl) progressEl.style.display = 'none';
+      if (summaryEl) summaryEl.innerHTML = '';
+      if (breachBtn) breachBtn.textContent = 'Run Real Dictionary Attack';
+      void rehash();
+    });
+  });
+
+  await rehash();
+
+  if (!breachBtn) return;
+
+  breachBtn.addEventListener('click', async () => {
+    if (hashing) return;
+    breachBtn.disabled = true;
+    breachBtn.innerHTML = '<span class="spinner"></span> Attacking…';
+    costRadios.forEach(r => { r.disabled = true; });
+    if (progressEl) progressEl.style.display = '';
+    if (summaryEl) summaryEl.innerHTML = '';
+
+    const maxAttempts = COMMON_PASSWORDS.length * DEMO_USERS.length;
+    const attackCost = storedCost;
+
+    try {
+      const res = await cryptoClient.crack(stored, COMMON_PASSWORDS, CRACK_BUDGET_MS, (p) => {
+        if (fillEl) fillEl.style.width = `${Math.min(100, (p.attempts / maxAttempts) * 100)}%`;
         if (textEl) {
           textEl.textContent =
-            `Attempted ${Math.floor(dictionarySize * progress / 100).toLocaleString()} of ` +
-            `${dictionarySize.toLocaleString()} dictionary words… Estimated total: ${timeStr} per user`;
+            `${p.attempts.toLocaleString()} real bcrypt comparisons executed ` +
+            `(word ${p.wordsTried} of ${COMMON_PASSWORDS.length}) in ${(p.elapsedMs / 1000).toFixed(1)} s — ` +
+            `${p.cracked} of ${DEMO_USERS.length} accounts cracked.`;
         }
-        if (progress >= 100) clearInterval(interval);
-      }, 100);
+      });
 
-      window.setTimeout(() => {
-        clearInterval(interval);
-        if (textEl) {
-          textEl.innerHTML =
-            `<strong style="color: var(--color-valid-text);">Gave up after 5 seconds.</strong> ` +
-            `At ${timePerHash.toFixed(0)} ms/hash, cracking a 100,000-word dictionary would take ` +
-            `<strong>${timeStr}</strong> per user × ${DEMO_USERS.length} users.`;
+      const crackedBy = new Map(res.cracked.map(c => [c.username, c]));
+      for (const u of DEMO_USERS) {
+        const cell = $(`p6c-crack-${u.username}`);
+        if (!cell) continue;
+        const hit = crackedBy.get(u.username);
+        if (hit) {
+          cell.textContent = `${hit.password} (word #${hit.position})`;
+          cell.className = 'p6c-crack revealed';
+        } else {
+          cell.textContent = 'survived';
+          cell.className = 'p6c-crack safe';
         }
-        breachBtn.textContent = 'Too Slow!';
-        const callout = $('p6c-callout');
-        if (callout) callout.style.display = '';
-      }, 5000);
-    });
-  }
+      }
+
+      const rate = res.msPerAttempt;
+      const perAccountSec = (REALISTIC_WORDLIST * rate) / 1000;
+      const wholeDbSec = perAccountSec * DEMO_USERS.length;
+      const coverage = res.exhausted
+        ? `the full ${COMMON_PASSWORDS.length}-word list`
+        : `only ${((res.attempts / maxAttempts) * 100).toFixed(1)}% of the ${maxAttempts.toLocaleString()} ` +
+          `word × account combinations before the ${(CRACK_BUDGET_MS / 1000).toFixed(0)}-second budget ran out`;
+
+      if (fillEl) fillEl.style.width = `${Math.min(100, (res.attempts / maxAttempts) * 100)}%`;
+      if (textEl) {
+        textEl.innerHTML =
+          `<strong>${res.attempts.toLocaleString()} real bcrypt comparisons</strong> executed in ` +
+          `${(res.timeMs / 1000).toFixed(1)} s at cost ${attackCost} — a measured ` +
+          `<strong>${rate.toFixed(1)} ms per guess</strong>. That covered ${coverage}.`;
+      }
+
+      if (summaryEl) {
+        const survivors = DEMO_USERS.length - res.cracked.length;
+        summaryEl.innerHTML =
+          `<div class="status-display">` +
+          `<strong>Result at cost ${attackCost}: ${res.cracked.length} of ${DEMO_USERS.length} accounts cracked, ` +
+          `${survivors} survived.</strong><br>` +
+          (res.cracked.length > 0
+            ? `Cracked: ${res.cracked.map(c => `${escapeHtml(c.username)} (${escapeHtml(c.password)}, ` +
+                `word #${c.position})`).join(', ')}.<br>`
+            : '') +
+          `Every one of those ${res.attempts.toLocaleString()} guesses was a genuine ` +
+          `<code>bcrypt.compare</code> against a genuine stored hash — there is no progress simulation here.<br>` +
+          `<span style="font-size: 0.8125rem; color: var(--color-text-3);">` +
+          `Extrapolating from the rate just measured, a realistic ${REALISTIC_WORDLIST.toLocaleString()}-word list ` +
+          `would take <strong>${formatDuration(perAccountSec)}</strong> per account at this cost, or ` +
+          `<strong>${formatDuration(wholeDbSec)}</strong> for all ${DEMO_USERS.length} — because the per-account ` +
+          `salt means the attacker cannot reuse a single guess across the database. ` +
+          `Now switch the stored cost above and run it again: the wordlist, the code and the budget are identical, ` +
+          `so any change you see is the cost factor alone.</span></div>`;
+      }
+
+      // The panel's own conclusion, derived from what this run measured rather
+      // than from a fixed "weeks or months" claim that the numbers contradict.
+      const impactEl = $('p6c-impact');
+      if (impactEl) {
+        impactEl.innerHTML =
+          `At the cost-${attackCost} rate measured on this device (${rate.toFixed(1)} ms per guess), a ` +
+          `${REALISTIC_WORDLIST.toLocaleString()}-word dictionary costs an attacker about ` +
+          `<strong>${formatDuration(perAccountSec)} per account</strong> ` +
+          `(<strong>${formatDuration(wholeDbSec)}</strong> for this ${DEMO_USERS.length}-account table). ` +
+          `Unsalted MD5 above needed one hash-map lookup per account and no per-account work at all. ` +
+          `That gap is the breathing room bcrypt buys — but note it is measured in this browser tab: a dedicated ` +
+          `cracking rig is orders of magnitude faster, and a password near the top of the wordlist still falls ` +
+          `quickly at any cost. The cost factor buys time proportional to how deep the guess sits in the list; ` +
+          `it does not rescue a weak password.`;
+      }
+
+      breachBtn.textContent = res.cracked.length === DEMO_USERS.length
+        ? 'Whole Database Cracked'
+        : `${res.cracked.length} of ${DEMO_USERS.length} Cracked`;
+      const callout = $('p6c-callout');
+      if (callout) callout.style.display = '';
+    } catch (err) {
+      if (textEl) textEl.textContent = `Attack failed: ${String(err)}`;
+      breachBtn.textContent = 'Run Real Dictionary Attack';
+    } finally {
+      breachBtn.disabled = false;
+      costRadios.forEach(r => { r.disabled = false; });
+    }
+  });
 }

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { md5, parseBcryptHash, isBcryptHash, formatDuration, variance } from './lib.ts';
+import {
+  md5, parseBcryptHash, isBcryptHash, formatDuration, variance, COMMON_PASSWORDS,
+} from './lib.ts';
 
 describe('md5', () => {
   // Canonical RFC 1321 / well-known test vectors.
@@ -72,6 +74,39 @@ describe('formatDuration', () => {
 
   it('handles infinity', () => {
     expect(formatDuration(Infinity)).toBe('∞');
+  });
+});
+
+describe('COMMON_PASSWORDS', () => {
+  // Exhibit 6 runs both of its attacks against this list. If the list stops
+  // containing the demo accounts' passwords, the attacks stop demonstrating
+  // anything — so the content, not just the shape, is asserted here.
+  it('is a non-trivial list of unique, non-empty entries', () => {
+    expect(COMMON_PASSWORDS.length).toBeGreaterThan(150);
+    expect(new Set(COMMON_PASSWORDS).size).toBe(COMMON_PASSWORDS.length);
+    expect(COMMON_PASSWORDS.every(w => typeof w === 'string' && w.length > 0)).toBe(true);
+  });
+
+  it('is ordered by real-world frequency, worst first', () => {
+    expect(COMMON_PASSWORDS[0]).toBe('123456');
+    expect(COMMON_PASSWORDS[1]).toBe('password');
+    // The demo depends on weak passwords being reachable in a handful of guesses.
+    expect(COMMON_PASSWORDS.indexOf('qwerty')).toBeLessThan(10);
+  });
+
+  it('contains every crackable demo password', () => {
+    for (const pw of ['password123', 'letmein', 'qwerty', '123456', 'dragon', 'iloveyou', 'monkey']) {
+      expect(COMMON_PASSWORDS).toContain(pw);
+    }
+  });
+
+  it('does NOT contain the strong demo password, so the miss path is real', () => {
+    expect(COMMON_PASSWORDS).not.toContain('tR7#qLp2$Wm9zVx4');
+  });
+
+  it('yields a collision-free MD5 rainbow table', () => {
+    const digests = COMMON_PASSWORDS.map(md5);
+    expect(new Set(digests).size).toBe(COMMON_PASSWORDS.length);
   });
 });
 

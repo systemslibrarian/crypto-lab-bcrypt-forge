@@ -21,14 +21,14 @@ bcrypt is a password hashing function designed by Niels Provos and David Mazièr
 
 Six exhibits:
 
-1. **Anatomy** — color-annotated bcrypt output (version/cost/salt/hash), plus a "Why bcrypt is slow" animation of the Eksblowfish key schedule showing the salt+password being folded into the 4 KB Blowfish state 2^cost times, and an interactive **72-byte-limit** demo where two long passwords that share a 72-byte prefix cross-verify.
+1. **Anatomy** — color-annotated bcrypt output (version/cost/salt/hash), plus a "Why bcrypt is slow" panel that **executes the real Eksblowfish key schedule** at a cost you pick: the grid and round counter are driven by rounds that genuinely completed, so the wait you sit through doubles with every +1 to cost. Plus an interactive **72-byte-limit** demo where two long passwords that share a 72-byte prefix cross-verify.
 2. **Hash Generator** — live cost slider with real timing.
 3. **Benchmark** — cost factors 8–14 with a ~250 ms "login sweet spot" threshold marker so the recommended cost is visually motivated (fast enough for login, slow enough for attackers).
 4. **Verify** — timing-safe comparison framed as a *secondary* hardening (slowness + salt is the headline), with a choice between measuring real microsecond timings over thousands of trials or a clearly-labeled simulated/exaggerated leak.
 5. **Alternatives** — algorithm comparison table (bcrypt vs Argon2id vs scrypt vs PBKDF2 vs MD5) with inline definitions for terms like *timing oracle* and *PRF*.
-6. **Attack Demo** — a real-world breach simulation showing plaintext vs unsalted MD5 vs bcrypt outcomes, with alice/eve sharing a password so salting's effect is visible at a glance.
+6. **Attack Demo** — plaintext vs unsalted MD5 vs bcrypt, attacked for real. The MD5 scenario builds an **actual rainbow table** (MD5 of every word in the bundled common-password list) and recovers accounts by lookup — an account whose password is not in the list genuinely survives. The bcrypt scenario runs an **actual dictionary attack**: every guess is a real `bcrypt.compare` against a real stored hash, and the panel reports the attempts that executed and the rate measured. A **cost-downgrade selector** re-hashes the database at cost 4, 8, or 12 and reruns the identical attack, so the cost factor is the only variable — at cost 4 the list finishes in seconds and the weak accounts fall; at cost 12 the same attack barely starts. alice/eve share a password so salting's effect is visible at a glance.
 
-Every hash is **real, computed in your browser** — never simulated. All CPU-heavy work (bcrypt, PBKDF2, MD5) runs in a **Web Worker**, so the UI stays smooth even while hashing at cost 14.
+Every hash is **real, computed in your browser** — never simulated, and no progress bar is driven by a timer. All CPU-heavy work (bcrypt, PBKDF2, MD5) runs in a **Web Worker**, so the UI stays smooth even while hashing at cost 14.
 
 ## What Can Go Wrong
 
@@ -66,8 +66,8 @@ npm run dev
 ## Architecture
 
 - **No frameworks.** Vanilla TypeScript, plain CSS with design tokens, mobile-first, WCAG 2.1 AA, dark/light theme, and `prefers-reduced-motion` support.
-- **Web Worker crypto.** `src/crypto-worker.ts` runs bcrypt, PBKDF2, and MD5 off the main thread; `src/crypto-client.ts` is a promise-based RPC wrapper. Timings are measured *inside* the worker, so the benchmark numbers reflect the raw primitive rather than scheduling overhead — and the UI never freezes.
-- **Pure, tested core.** `src/lib.ts` holds DOM-free helpers (MD5, bcrypt-hash parsing, duration formatting) covered by `npm test` — including MD5 known-answer vectors and a bcryptjs round-trip integration test.
+- **Web Worker crypto.** `src/crypto-worker.ts` runs bcrypt, PBKDF2, and MD5 off the main thread; `src/crypto-client.ts` is a promise-based RPC wrapper. Timings are measured *inside* the worker, so the benchmark numbers reflect the raw primitive rather than scheduling overhead — and the UI never freezes. Long-running operations (the key schedule, the dictionary attack) stream **genuine progress** back over the same channel, so on-screen counters only ever report work that actually happened.
+- **Pure, tested core.** `src/lib.ts` holds DOM-free helpers (MD5, bcrypt-hash parsing, duration formatting, and the common-password wordlist both attacks run against) covered by `npm test` — including MD5 known-answer vectors and a bcryptjs round-trip integration test.
 
 ## Deploy to GitHub Pages
 
