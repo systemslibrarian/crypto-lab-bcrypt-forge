@@ -2,7 +2,7 @@
 
 ## What It Is
 
-bcrypt is a password hashing function designed by Niels Provos and David Mazières (1999), built on the Blowfish cipher with a deliberately slow and adaptive cost factor. Its "cost" is literally an exponent: the expensive Eksblowfish key schedule re-mixes the password and salt into a 4 KB Blowfish state 2^cost times, so each +1 to the cost doubles the work — that iterated key setup is *why* bcrypt is intrinsically slow. It is the most widely deployed password hashing scheme in production systems, used by default in Rails, Node.js, PHP, and Linux PAM. Its adaptive cost factor allows security to be maintained as hardware improves without changing the stored hash format. The security model is one-way: hashes cannot be reversed, only verified.
+bcrypt is a password hashing function designed by Niels Provos and David Mazières (1999), built on the Blowfish cipher with a deliberately slow and adaptive cost factor. Its "cost" is literally an exponent: the expensive Eksblowfish key schedule re-mixes the password and salt into a 4 KB Blowfish state 2^cost times, so each +1 to the cost doubles the work — that iterated key setup is *why* bcrypt is intrinsically slow. It is one of the most widely deployed password hashing schemes in production systems: the default in Rails and PHP, a common choice in Node.js, and the default password hash on OpenBSD, where it originated. On Linux, bcrypt (`$2b$`) is supported through libxcrypt but is *not* the `/etc/shadow` default — most distributions use SHA-512-crypt (`$6$`), and Debian 11+, Ubuntu 22.04+, and Fedora 35+ default to yescrypt (`$y$`). Its adaptive cost factor allows security to be maintained as hardware improves without changing the stored hash format. The security model is one-way: hashes cannot be reversed, only verified.
 
 ## When to Use It
 
@@ -43,7 +43,8 @@ Every hash is **real, computed in your browser** — never simulated. All CPU-he
 - Ruby on Rails `has_secure_password` uses bcrypt by default.
 - PHP's `password_hash()` defaults to the bcrypt algorithm.
 - Node.js applications widely use the `bcrypt` / `bcryptjs` libraries for credential storage.
-- Linux PAM and many web frameworks have shipped bcrypt as a default password hash.
+- OpenBSD uses bcrypt as its default password hash — the scheme was designed there (Provos & Mazières, USENIX 1999).
+- On Linux, libxcrypt implements bcrypt (`$2b$`) so such hashes verify fine, but it is not the `/etc/shadow` default: distributions ship SHA-512-crypt (`$6$`), or yescrypt (`$y$`) on Debian 11+, Ubuntu 22.04+, and Fedora 35+.
 
 ## How to Run Locally
 

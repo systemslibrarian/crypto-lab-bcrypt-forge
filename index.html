@@ -222,7 +222,8 @@
         <section class="panel-section" aria-labelledby="p1-usage-heading">
           <h3 id="p1-usage-heading" class="section-title">Where bcrypt Is Used</h3>
           <ul>
-            <li>Linux PAM (<code>/etc/shadow</code>)</li>
+            <li>OpenBSD — default password hash (bcrypt originated here)</li>
+            <li>Linux — supported via libxcrypt (<code>$2b$</code>), but not the <code>/etc/shadow</code> default (SHA-512-crypt, or yescrypt on newer distros)</li>
             <li>PHP <code>password_hash()</code></li>
             <li>Node.js <code>bcrypt</code> / <code>bcryptjs</code></li>
             <li>Django (optional backend)</li>
