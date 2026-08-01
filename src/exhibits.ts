@@ -748,8 +748,8 @@ const algorithms: AlgorithmRow[] = [
   },
   {
     name: 'Argon2id', year: 2015, adaptive: true, memoryHard: true, gpuResistant: true,
-    status: '✅ Preferred (NIST)', statusClass: 'color: var(--color-valid-text)',
-    description: 'Argon2id (winner of the Password Hashing Competition, 2015) combines Argon2i\'s side-channel resistance with Argon2d\'s GPU resistance. NIST SP 800-63B recommends it as the preferred password hashing algorithm for new systems.',
+    status: '✅ Preferred (OWASP)', statusClass: 'color: var(--color-valid-text)',
+    description: 'Argon2id (winner of the Password Hashing Competition, 2015) combines Argon2i\'s side-channel resistance with Argon2d\'s GPU resistance. OWASP recommends it as the first choice for new systems. NIST SP 800-63B does not endorse it — it names PBKDF2 and Balloon, because it requires an approved underlying one-way function.',
   },
 ];
 
