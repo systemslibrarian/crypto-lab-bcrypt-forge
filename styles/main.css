@@ -335,7 +335,10 @@ a:hover { text-decoration: none; }
   cursor: pointer;
   min-height: var(--tap-min);
   white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
+  /* Theme changes must apply these already-AA color pairs atomically. During
+     the former 150 ms foreground/background interpolation, the two moving
+     colors crossed at a low-contrast midpoint even though both endpoints pass. */
+  transition: none;
   flex-shrink: 0;
 }
 .panel-tab:hover {
