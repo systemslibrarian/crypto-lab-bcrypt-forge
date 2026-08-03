@@ -106,10 +106,16 @@
 
   --color-code-bg:      #f1f5f9;
 
-  --color-version:      #1a56db;
-  --color-cost:         #b45309;  /* darkened for AA contrast on white surfaces */
-  --color-salt:         #15803d;  /* darkened for AA contrast on white surfaces */
-  --color-hash:         #7c3aed;
+  /* The anatomy palette. These are tuned against the surface they are actually
+     drawn on — the annotated-hash panel, #dde5f5 — NOT against white. The
+     earlier values were picked for white and read as passing on paper while
+     failing in place: cost 3.97:1, salt 3.96:1, hash exactly 4.50:1 with no
+     margin at all. Ratios below are against #dde5f5 at 13px/400, so AA needs
+     4.5:1. e2e/a11y.spec.ts measures them in the browser. */
+  --color-version:      #1a56db;  /* 4.89:1 */
+  --color-cost:         #92400e;  /* 5.60:1 — was #b45309, 3.97:1 */
+  --color-salt:         #166534;  /* 5.64:1 — was #15803d, 3.96:1 */
+  --color-hash:         #6d28d9;  /* 5.62:1 — was #7c3aed, 4.50:1 exactly */
 }
 
 /* ─── Reset ──────────────────────────────────────────────────────── */
