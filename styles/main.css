@@ -115,6 +115,14 @@
 /* ─── Reset ──────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
+/* The UA stylesheet's `[hidden] { display: none }` loses to ANY author rule
+   that sets a display on the same element, regardless of specificity — author
+   styles outrank the UA sheet. `#p3-thresholds` shipped the attribute while
+   `.threshold-legend` set `display: flex`, so the benchmark's threshold legend
+   was painted before any benchmark had run and `thresholdsEl.hidden = false`
+   was a silent no-op. Make the attribute mean what it says. */
+[hidden] { display: none !important; }
+
 html {
   background-color: var(--color-bg);
   font-size: 16px;

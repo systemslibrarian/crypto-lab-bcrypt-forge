@@ -368,11 +368,28 @@ export function initExhibit2(): void {
     .then(({ timeMs }) => { msAtCost10 = timeMs; renderEstimate(); })
     .catch(() => { /* leave the estimate reading "measuring…" rather than inventing one */ });
 
+  /**
+   * A rendered hash is an answer about one password at one cost. Editing either
+   * input retires it, for the same reason Exhibit 4 retires its verdict: the
+   * work bar carries no cost of its own, so a hash of `$2b$06$` left sitting
+   * under a slider reading 12 puts two surfaces on screen disagreeing about
+   * which run the reader is looking at.
+   */
+  const retireResult = (): void => {
+    if (!resultEl.querySelector('.anatomy-hash')) return;
+    resultEl.textContent = 'Inputs changed — press "Hash It" to hash this pair.';
+    if (timingEl) timingEl.textContent = '';
+    if (costBarEl) costBarEl.innerHTML = '';
+  };
+
+  passwordInput.addEventListener('input', retireResult);
+
   costSlider.addEventListener('input', () => {
     const cost = parseInt(costSlider.value, 10);
     if (costValue) costValue.textContent = String(cost);
     costSlider.setAttribute('aria-valuenow', String(cost));
     renderEstimate();
+    retireResult();
   });
 
   hashBtn.addEventListener('click', async () => {
@@ -573,16 +590,32 @@ export function initExhibit4(): void {
 
   wirePasswordToggle(passwordInput, passwordToggle);
 
+  /**
+   * A verdict is only about the password and hash it was computed from. Editing
+   * either input — by typing, or by loading one of the example pairs — retires
+   * it, because "✓ Match" sitting above a password the user has since changed is
+   * a claim the page never checked.
+   */
+  const retireVerdict = (): void => {
+    if (!resultEl.querySelector('.verify-result')) return;
+    resultEl.innerHTML =
+      '<div class="status-display">Inputs changed — press Verify to check this pair.</div>';
+  };
+  passwordInput.addEventListener('input', retireVerdict);
+  hashInput.addEventListener('input', retireVerdict);
+
   if (correctBtn) {
     correctBtn.addEventListener('click', () => {
       passwordInput.value = EXAMPLE_PASSWORD;
       hashInput.value = exampleHash;
+      retireVerdict();
     });
   }
   if (wrongBtn) {
     wrongBtn.addEventListener('click', () => {
       passwordInput.value = 'wrongpassword';
       hashInput.value = exampleHash;
+      retireVerdict();
     });
   }
 
@@ -940,6 +973,13 @@ export function initExhibit6(): void {
 
   if (!aContainer || !bContainer || !cContainer) return;
 
+  // Scenario B cannot act until its MD5 digests come back from the worker, and
+  // that request queues behind every bcrypt hash this page kicks off on load.
+  // Left enabled, the button looked live for the better part of a second and
+  // swallowed any click in that window without a word. Scenario C already
+  // disables its button while it works; B now does the same.
+  if (bBreachBtn) bBreachBtn.disabled = true;
+
   initScenarioA(aContainer, aBreachBtn);
   initScenarioB(bContainer, bBreachBtn);
   initScenarioC(cContainer, cBreachBtn);
@@ -1007,6 +1047,8 @@ async function initScenarioB(container: HTMLElement, breachBtn: HTMLButtonElemen
 
   if (breachBtn) {
     const summaryEl = $('p6b-summary');
+    // The table is built and the handler is attached: the button is live now.
+    breachBtn.disabled = false;
     breachBtn.addEventListener('click', async () => {
       breachBtn.disabled = true;
       breachBtn.innerHTML = '<span class="spinner"></span> Building the table…';
@@ -1133,6 +1175,14 @@ async function initScenarioC(container: HTMLElement, breachBtn: HTMLButtonElemen
       if (progressEl) progressEl.style.display = 'none';
       if (summaryEl) summaryEl.innerHTML = '';
       if (breachBtn) breachBtn.textContent = 'Run Real Dictionary Attack';
+      // The Impact panel quotes a rate measured at the PREVIOUS cost. Changing
+      // the stored cost re-hashes the database and retires that run, so the
+      // conclusion has to go with it — otherwise a cost-12 table sits under a
+      // paragraph reporting what cost 4 cost the attacker.
+      const impactEl = $('p6c-impact');
+      if (impactEl) impactEl.innerHTML = '';
+      const calloutEl = $('p6c-callout');
+      if (calloutEl) calloutEl.style.display = 'none';
       void rehash();
     });
   });
