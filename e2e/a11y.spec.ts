@@ -23,15 +23,32 @@ import { expect, test, type Page } from '@playwright/test';
  *    failure, for a state no user reads, against a page whose rest state is
  *    fine. That is what made this suite flaky.
  *
- *    `reducedMotion: 'reduce'` settles it through the stylesheet's OWN
- *    `prefers-reduced-motion` block, which already neutralizes every
- *    transition. No test-only CSS, and it exercises the path real users with
- *    that preference actually get.
+ *    It is settled through the stylesheet's OWN `prefers-reduced-motion` block,
+ *    which already neutralizes every transition. No test-only CSS, and it
+ *    exercises the path real users with that preference actually get.
+ *
+ *    NOTE: `test.use({ reducedMotion: 'reduce' })` SILENTLY DOES NOTHING here.
+ *    On Playwright 1.61.1 with this config the page still reports
+ *    `matchMedia('(prefers-reduced-motion: reduce)').matches === false`, so a
+ *    suite relying on it is running with every transition live while looking
+ *    like it settled them. Use `page.emulateMedia` and ASSERT the media query
+ *    actually matches — an emulation that quietly no-ops is worse than none,
+ *    because it reads as handled.
  */
 
-test.use({ reducedMotion: 'reduce' });
-
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
+
+/**
+ * Apply reduced motion and prove it landed. The assertion is the point: this
+ * is the second time in this fleet that a "settled" suite was not settled.
+ */
+async function settleMotion(page: Page): Promise<void> {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const applied = await page.evaluate(
+    () => matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+  expect(applied, 'reduced-motion emulation did not reach the page').toBe(true);
+}
 
 async function openAllDetails(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -107,6 +124,7 @@ async function anatomyContrast(page: Page): Promise<{ label: string; ratio: numb
 for (const theme of ['dark', 'light'] as const) {
   test(`anatomy palette meets AA where it is drawn — ${theme} theme`, async ({ page }) => {
     await page.goto('.');
+    await settleMotion(page);
     await awaitLiveContent(page);
     if (theme === 'light') {
       await page.locator('#cl-theme-toggle').click();
@@ -128,6 +146,7 @@ for (const theme of ['dark', 'light'] as const) {
 
 test('no WCAG A/AA violations in dark theme', async ({ page }) => {
   await page.goto('.');
+  await settleMotion(page);
   await awaitLiveContent(page);
   await openAllDetails(page);
   await scan(page);
@@ -135,6 +154,7 @@ test('no WCAG A/AA violations in dark theme', async ({ page }) => {
 
 test('no WCAG A/AA violations in light theme', async ({ page }) => {
   await page.goto('.');
+  await settleMotion(page);
   await awaitLiveContent(page);
   await page.locator('#cl-theme-toggle').click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
