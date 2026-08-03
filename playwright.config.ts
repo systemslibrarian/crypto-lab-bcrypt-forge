@@ -12,7 +12,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'list' : [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:4223/crypto-lab-bcrypt-forge/',
+    baseURL: 'http://localhost:4603/crypto-lab-bcrypt-forge/',
     // The page derives its initial theme from prefers-color-scheme when no
     // saved preference exists; pin it to dark so the default scan is dark and
     // the toggle deterministically moves to light.
@@ -26,8 +26,8 @@ export default defineConfig({
     // Without the build, a source change that fails to compile leaves the last
     // good bundle in place and the suite passes green against code that no
     // longer builds — which silently invalidates mutation checks.
-    command: 'npm run build && npm run preview -- --port 4223 --strictPort',
-    url: 'http://localhost:4223/crypto-lab-bcrypt-forge/',
+    command: 'npm run build && npm run preview -- --port 4603 --strictPort',
+    url: 'http://localhost:4603/crypto-lab-bcrypt-forge/',
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
   },
