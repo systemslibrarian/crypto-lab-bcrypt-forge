@@ -65,7 +65,7 @@ npm run dev
 
 ## Architecture
 
-- **No frameworks.** Vanilla TypeScript, plain CSS with design tokens, mobile-first, WCAG 2.1 AA, dark/light theme, and `prefers-reduced-motion` support.
+- **No frameworks.** Vanilla TypeScript, plain CSS with design tokens, mobile-first, WCAG 2.1 AA, dark theme, and `prefers-reduced-motion` support.
 - **Web Worker crypto.** `src/crypto-worker.ts` runs bcrypt, PBKDF2, and MD5 off the main thread; `src/crypto-client.ts` is a promise-based RPC wrapper. Timings are measured *inside* the worker, so the benchmark numbers reflect the raw primitive rather than scheduling overhead — and the UI never freezes. Long-running operations (the key schedule, the dictionary attack) stream **genuine progress** back over the same channel, so on-screen counters only ever report work that actually happened.
 - **Pure, tested core.** `src/lib.ts` holds DOM-free helpers (MD5, bcrypt-hash parsing, duration formatting, and the common-password wordlist both attacks run against) covered by `npm test` — including MD5 known-answer vectors and a bcryptjs round-trip integration test.
 

@@ -121,15 +121,11 @@ async function anatomyContrast(page: Page): Promise<{ label: string; ratio: numb
   });
 }
 
-for (const theme of ['dark', 'light'] as const) {
+for (const theme of ['dark'] as const) {
   test(`anatomy palette meets AA where it is drawn — ${theme} theme`, async ({ page }) => {
     await page.goto('.');
     await settleMotion(page);
     await awaitLiveContent(page);
-    if (theme === 'light') {
-      await page.locator('#cl-theme-toggle').click();
-      await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-    }
 
     const measured = await anatomyContrast(page);
     expect(measured).toHaveLength(4);
@@ -152,12 +148,3 @@ test('no WCAG A/AA violations in dark theme', async ({ page }) => {
   await scan(page);
 });
 
-test('no WCAG A/AA violations in light theme', async ({ page }) => {
-  await page.goto('.');
-  await settleMotion(page);
-  await awaitLiveContent(page);
-  await page.locator('#cl-theme-toggle').click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  await openAllDetails(page);
-  await scan(page);
-});
