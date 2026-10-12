@@ -840,7 +840,7 @@ const algorithms: AlgorithmRow[] = [
   {
     name: 'Argon2id', year: 2015, adaptive: true, memoryHard: true, gpuResistant: true,
     status: '✅ Preferred (OWASP)', statusClass: 'color: var(--color-valid-text)',
-    description: 'Argon2id (winner of the Password Hashing Competition, 2015) combines Argon2i\'s side-channel resistance with Argon2d\'s GPU resistance. OWASP recommends it as the first choice for new systems. NIST SP 800-63B does not endorse it — it names PBKDF2 and Balloon, because it requires an approved underlying one-way function.',
+    description: 'Argon2id (winner of the Password Hashing Competition, 2015) combines Argon2i\'s side-channel resistance with Argon2d\'s GPU resistance. OWASP recommends it as the first choice for new systems. NIST SP 800-63B-4 (July 2025), section 3.1.1.2, points to SP 800-132 or updated NIST guidance for password hashing. This is separate from OWASP recommendations and does not establish a new approval or disapproval of Argon2id.',
   },
 ];
 
@@ -868,7 +868,7 @@ export function initExhibit5(): void {
       `<td style="${algo.statusClass}">${algo.status}</td>` +
       `</tr>` +
       `<tr class="expand-row" hidden>` +
-      `<td colspan="6">${escapeHtml(algo.description)}</td>` +
+      `<td colspan="6">${escapeHtml(algo.description)}${algo.name === 'Argon2id' ? ' <a href="https://pages.nist.gov/800-63-4/sp800-63b/authenticators/#passwordver">NIST SP 800-63B-4 §3.1.1.2 (July 2025)</a>' : ''}</td>` +
       `</tr>`;
   }
   tbody.innerHTML = html;
