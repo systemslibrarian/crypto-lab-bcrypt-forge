@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { COMMON_PASSWORDS } from '../src/lib';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 /**
@@ -458,7 +460,7 @@ test('the plaintext breach reveals exactly the stored passwords', async ({ page 
   await expect(page.locator('#p6a-breach-btn')).toBeDisabled();
 });
 
-test('the rainbow-table button is never live before its table exists', async ({ page }) => {
+test('the precomputed-table button is never live before its table exists', async ({ page }) => {
   await boot(page);
   await page.locator('.panel-tab').nth(5).click();
 
@@ -477,7 +479,7 @@ test('the rainbow-table button is never live before its table exists', async ({ 
       sawTablePending = true;
       expect(
         enabled,
-        'the rainbow-table button was enabled while its table had not been built yet',
+        'the precomputed-table button was enabled while its table had not been built yet',
       ).toBe(false);
     } else {
       break;
@@ -494,7 +496,7 @@ test('the rainbow-table button is never live before its table exists', async ({ 
   await expect(page.locator('#p6b-summary')).toContainText('Precomputed', { timeout: 120_000 });
 });
 
-test('the rainbow-table lookup is a real lookup, and its counter matches the cells', async ({
+test('the precomputed-table lookup is a real lookup, and its counter matches the cells', async ({
   page,
 }) => {
   test.slow();
@@ -503,6 +505,10 @@ test('the rainbow-table lookup is a real lookup, and its counter matches the cel
 
   const rows = page.locator('#p6b-table-container tbody tr');
   await expect(rows).toHaveCount(DEMO_USERS.length, { timeout: 60_000 });
+
+  // Guard the original label BEFORE clicking: the handler replaces it with a count.
+  await expect(page.locator('#p6b-breach-btn'), 'Scenario B names a precomputed lookup table')
+    .toHaveText('Look Up in Precomputed Table');
 
   // Unsalted means identical passwords produce identical digests — the whole
   // reason a precomputed table works. alice and eve share a password.
@@ -519,6 +525,13 @@ test('the rainbow-table lookup is a real lookup, and its counter matches the cel
   await expect(page.locator('#p6b-breach-btn')).toBeEnabled({ timeout: 60_000 });
   await page.locator('#p6b-breach-btn').click();
   await expect(page.locator('#p6b-summary')).toContainText('Precomputed', { timeout: 120_000 });
+
+  const tableSummary = await textOf(page.locator('#p6b-summary'));
+  // Independent MD5 route: Node/OpenSSL, not the page's hand-rolled worker.
+  const distinctDigests = new Set(COMMON_PASSWORDS.map(word =>
+    createHash('md5').update(word, 'utf8').digest('hex')));
+  expect(numberFrom(tableSummary, /^Precomputed ([\d,]+) MD5 digests/u),
+    'full lookup table stores every distinct wordlist digest').toBe(distinctDigests.size);
 
   const cells = page.locator('#p6b-table-container .p6b-crack');
   const verdicts = (await cells.allTextContents()).map(squash);
@@ -544,7 +557,6 @@ test('the rainbow-table lookup is a real lookup, and its counter matches the cel
   const summary = await textOf(page.locator('#p6b-summary'));
   expect(numberFrom(summary, /recovered ([\d,]+) of/u)).toBe(hits.length);
   expect(numberFrom(summary, /of (\d+) passwords by table lookup/u)).toBe(DEMO_USERS.length);
-  expect(numberFrom(summary, /^Precomputed ([\d,]+) MD5 digests/u)).toBeGreaterThan(200);
   expect(summary).toContain(`${misses.length} account(s) survived`);
 
   // The button's own label repeats the same count.
@@ -552,6 +564,11 @@ test('the rainbow-table lookup is a real lookup, and its counter matches the cel
     `${hits.length} of ${DEMO_USERS.length} Cracked`,
   );
   await expect(page.locator('#p6b-callout')).toBeVisible();
+  const distinction = 'A rainbow table stores chain endpoints and recomputes intermediate hash/reduction steps to recover passwords covered by its chains, trading memory for lookup time.';
+  const scenarioText = await textOf(page.locator('#p6-scenario-b'));
+  expect(scenarioText, 'rainbow tables appear only in the distinction').toContain(distinction);
+  expect(scenarioText.replace(distinction, ''), 'Scenario B never calls its lookup table a rainbow table')
+    .not.toMatch(/rainbow table/iu);
 });
 
 test('the bcrypt dictionary attack reports the accounts it actually cracked, and retires that report when the cost changes', async ({

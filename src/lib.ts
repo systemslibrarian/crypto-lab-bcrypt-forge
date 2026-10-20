@@ -62,7 +62,7 @@ export function variance(arr: number[]): number {
  * exact leak ranks.
  *
  * This is the ACTUAL list both attacks in Exhibit 6 run against:
- *  - Scenario B precomputes the MD5 of every entry — that is the rainbow table.
+ *  - Scenario B precomputes the MD5 of every entry — a full lookup table.
  *  - Scenario C feeds every entry to bcrypt.compare against the stored hashes.
  *
  * It is deliberately small enough to finish in a browser tab. The UI reports

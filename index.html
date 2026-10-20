@@ -164,7 +164,7 @@
     <div class="cl-hero-main">
       <h1 class="cl-hero-title">bcrypt Forge</h1>
       <p class="cl-hero-sub">Password Hashing · Adaptive Cost · Salted</p>
-      <p class="cl-hero-desc">Generate real bcrypt hashes in your browser, dissect their version/cost/salt/hash anatomy, benchmark how each cost step doubles the work, and watch salting and timing-safe verification hold up against breach and rainbow-table attacks.</p>
+      <p class="cl-hero-desc">Generate real bcrypt hashes in your browser, dissect their version/cost/salt/hash anatomy, benchmark how each cost step doubles the work, and watch salting and timing-safe verification hold up against breach and precomputed-table attacks.</p>
     </div>
     <aside class="cl-hero-why" aria-label="Why it matters">
       <span class="cl-hero-why-label">WHY IT MATTERS</span>
@@ -651,13 +651,18 @@
           </p>
           <div class="button-row" style="margin-top: var(--space-3);">
             <button id="p6b-breach-btn" type="button" class="btn btn--attack">
-              Look Up in Rainbow Table
+              Look Up in Precomputed Table
             </button>
           </div>
           <div id="p6b-summary" aria-live="polite" style="margin-top: var(--space-3);"></div>
           <div id="p6b-callout" class="callout callout--warning" style="display: none;">
             <div class="callout__title">Impact</div>
-            Rainbow tables precompute hashes for billions of common passwords.
+            This exhibit stored every word's digest — a full lookup table.
+            A rainbow table stores chain endpoints and recomputes intermediate hash/reduction steps
+            to recover passwords covered by its chains, trading memory for lookup time.
+            Either kind of precomputation can be reused against unsalted breaches; a fresh,
+            unpredictable per-user salt prevents reuse of a single unsalted table.
+            Attackers can still guess passwords separately for each salt.
             Unsalted hashes fall in seconds. Duplicate passwords produce identical hashes —
             one lookup compromises all users sharing that password.
           </div>

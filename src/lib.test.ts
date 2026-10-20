@@ -104,7 +104,7 @@ describe('COMMON_PASSWORDS', () => {
     expect(COMMON_PASSWORDS).not.toContain('tR7#qLp2$Wm9zVx4');
   });
 
-  it('yields a collision-free MD5 rainbow table', () => {
+  it('yields a collision-free MD5 lookup table', () => {
     const digests = COMMON_PASSWORDS.map(md5);
     expect(new Set(digests).size).toBe(COMMON_PASSWORDS.length);
   });

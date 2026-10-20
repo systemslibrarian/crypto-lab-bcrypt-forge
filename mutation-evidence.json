@@ -1,0 +1,22 @@
+[
+  {
+    "name": "label",
+    "baseline": "b54680134a53c0aa9d7ba80e6093b1f8c6277f7ebd0b76c5525372004bbfff2d",
+    "mutated": "7e202fa3915b76b7d0fecb0a9db949938da8203d3ef3c4c72be4d613d30ce985",
+    "source_diff": true,
+    "build": true,
+    "test": "the precomputed-table lookup is a real lookup, and its counter matches the cells",
+    "exit": 1,
+    "restored": true
+  },
+  {
+    "name": "count",
+    "baseline": "b54680134a53c0aa9d7ba80e6093b1f8c6277f7ebd0b76c5525372004bbfff2d",
+    "mutated": "82b508ad618abb3441a9a8ba964c633c75295be3206d1bc3b494eb3a19d69d07",
+    "source_diff": true,
+    "build": true,
+    "test": "the precomputed-table lookup is a real lookup, and its counter matches the cells",
+    "exit": 1,
+    "restored": true
+  }
+]

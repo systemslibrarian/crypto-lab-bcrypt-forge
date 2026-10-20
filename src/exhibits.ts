@@ -1011,7 +1011,7 @@ function initScenarioA(container: HTMLElement, breachBtn: HTMLButtonElement | nu
 }
 
 /**
- * Scenario B — a REAL rainbow table.
+ * Scenario B — a REAL precomputed lookup table (every word stored; not a rainbow table).
  *
  * On click we MD5 every entry in `COMMON_PASSWORDS` (the same list the bcrypt
  * attack uses), build a digest → plaintext map, then look up each account's
@@ -1086,7 +1086,7 @@ async function initScenarioB(container: HTMLElement, breachBtn: HTMLButtonElemen
           `${DEMO_USERS.length} passwords by table lookup in <strong>${lookupMs.toFixed(1)} ms</strong>. ` +
           (misses > 0
             ? `<span style="color: var(--color-valid-text);">${misses} account(s) survived — ` +
-              `their password is not in the wordlist, and a rainbow table can only return what was put into it.</span> `
+              `their password is not in the wordlist, and a precomputed table can only return what was put into it.</span> `
             : '') +
           `<span style="font-size: 0.8125rem; color: var(--color-text-3);">Real attackers precompute billions of ` +
           `entries once and reuse them against every unsalted breach forever. The lookup itself is a hash-map hit — ` +
