@@ -53,13 +53,21 @@ the existing Alternatives statement, and the supplied brief.
 ## Catalog handoff
 
 - Pages URL: https://systemslibrarian.github.io/crypto-lab-bcrypt-forge/
-- Final main SHA / served-bytes output: pending; this change is local only.
+- Implementation on main: `ec53d0342c2731ee2ea48f4e142a5d5ef18895fa`.
+  Pages HTML contains the unique label once; served JS matches the tested build.
+  `shipping-evidence.json` records the asset digest and successful workflow URL.
 - Card copy and chips: no change proposed.
 - New implemented algorithms: none. MD5 and the full-map lookup already existed.
   Rainbow chains remain explanatory prose, not an implemented algorithm.
 - Concept: `concept-coverage.md`, “6. Key derivation and password hashing”.
-- The crypto-counsel corpus sweep remains pending; neither shared repository was
-  modified. No link to the proposed Hash Hunt site was added.
+- The actual corpus ID is `demo_crypto_lab_bcrypt_forge` (underscores). Its entry
+  contains no “rainbow” claim to correct. Neither shared repository was modified.
+  No link to the proposed Hash Hunt site was added.
 
 Summary: build passed; 25 unit and 2 publish-request tests passed; 18 browser
 tests passed; §4.1c 2/2 killed; accessibility gate passed.
+
+The shared deploy-sync checker returned FLEET-UNREAD because only the task’s
+14 sibling clones were available against its census of 236. Its census and gates
+were not modified. The lab-specific deployment succeeded and the public asset
+was compared byte-for-byte with the tested build.
