@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { auditControlNames, formatControlNameFailures } from './control-names';
 
 /**
  * WCAG regression gate. Scans the full page with every <details> expanded,
@@ -79,6 +80,10 @@ async function scan(page: Page): Promise<void> {
     nodes: v.nodes.map((n) => n.target.join(' ')).slice(0, 5),
   }));
   expect(summary).toEqual([]);
+  // axe's `label` rule accepts a bare `placeholder` as an accessible name, so a
+  // deleted label can leave this gate green. See `control-names.ts`.
+  const unnamed = formatControlNameFailures(await auditControlNames(page));
+  expect(unnamed, 'form controls named only by placeholder/title').toEqual([]);
 }
 
 /**
