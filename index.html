@@ -387,9 +387,11 @@
 
         <div class="callout">
           <div class="callout__title">Why This Matters</div>
-          Cost 12 is the current recommended minimum for login systems in 2024–2025.
-          Cost 10 was standard in 2012 — hardware has gotten faster, but bcrypt's
-          cost factor lets you keep up without changing your algorithm.
+          OWASP's <a href="https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html" target="_blank" rel="noopener">Password Storage Cheat Sheet</a>
+          sets the bcrypt minimum at cost 10 and says the work factor should be
+          &ldquo;as large as verification server performance will allow&rdquo; (verified 15 November 2026);
+          12 is a common choice above that floor. Cost 10 was standard in 2012 &mdash; hardware has
+          gotten faster, but bcrypt's cost factor lets you keep up without changing your algorithm.
         </div>
       </div>
     </section>
@@ -604,8 +606,12 @@
 
         <div class="callout callout--valid">
           <div class="callout__title">When Should You Choose bcrypt Over Argon2id?</div>
-          When your stack defaults to it, or when FIPS compliance rules out Argon2.
-          Otherwise prefer Argon2id for new systems.
+          When your stack defaults to it and you cannot add Argon2id. FIPS is not that
+          reason: bcrypt is built on Blowfish, which is not a NIST-approved algorithm, so a
+          FIPS-140 requirement rules bcrypt out just as it rules out Argon2. The approved
+          choice there is PBKDF2 &mdash; <a href="https://csrc.nist.gov/pubs/sp/800/132/final" target="_blank" rel="noopener">NIST SP 800-132</a>
+          approves it as the password-based KDF (verified 15 November 2026), which is what the
+          comparison table above and OWASP both say. Otherwise prefer Argon2id for new systems.
         </div>
       </div>
     </section>
@@ -692,7 +698,7 @@
             </label>
             <label class="mode-toggle__opt">
               <input type="radio" name="p6c-cost" value="12" checked />
-              <span><strong>Cost 12</strong> — a current recommendation. Re-hashing takes a moment; so does each guess.</span>
+              <span><strong>Cost 12</strong> — comfortably above OWASP's minimum of 10. Re-hashing takes a moment; so does each guess.</span>
             </label>
           </fieldset>
 
