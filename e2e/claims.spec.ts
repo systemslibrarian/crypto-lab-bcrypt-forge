@@ -259,9 +259,8 @@ test('the benchmark rows agree with their own timings, and the legend appears on
     expect(multiplier).toBeGreaterThanOrEqual(ratioLow - 0.05);
     expect(multiplier).toBeLessThanOrEqual(ratioHigh + 0.05);
 
-    // The verdict is a claim about the 250 ms human-perception threshold, and
-    // the millisecond figure it is a claim about is rendered right beside it.
-    expect(verdict).toBe(timeMs <= 250 ? 'feels instant' : 'attacker-costly');
+    // The verdict is explicitly a local usability reference, not a security claim.
+    expect(verdict).toBe(timeMs <= 250 ? 'within 250 ms local target' : 'above 250 ms local target');
     await expect(row.locator('.bar-verdict')).toHaveClass(
       timeMs <= 250 ? /bar-verdict--login/u : /bar-verdict--attack/u,
     );

@@ -141,7 +141,8 @@ function initEksSchedule(): void {
     if (roundsEl) {
       roundsEl.innerHTML =
         `cost ${cost} → 2<sup>${cost}</sup> = ` +
-        `<strong style="color: var(--color-warning-text);">${(2 ** cost).toLocaleString()}</strong> key-expansion rounds`;
+        `<strong style="color: var(--color-warning-text);">${(2 ** cost).toLocaleString()}</strong> cost iterations; ` +
+        `${(1 + 2 * (2 ** cost)).toLocaleString()} total ExpandKey calls`;
     }
   };
 
@@ -170,7 +171,7 @@ function initEksSchedule(): void {
 
     progressEl.innerHTML =
       `<span class="spinner"></span> Running the real key schedule at cost ${cost} ` +
-      `(<strong>${totalRounds.toLocaleString()}</strong> rounds)…`;
+      `(<strong>${totalRounds.toLocaleString()}</strong> cost iterations)…`;
 
     try {
       // Every repaint below is triggered by a report of rounds that really ran.
@@ -182,7 +183,7 @@ function initEksSchedule(): void {
           cell.className = `eks-cell eks-cell--hot ${usingSalt ? 'eks-cell--salt' : 'eks-cell--pw'}`;
         }
         progressEl.innerHTML =
-          `Round <strong>${p.round.toLocaleString()}</strong> of ` +
+          `Cost iteration <strong>${p.round.toLocaleString()}</strong> of ` +
           `<strong>${p.totalRounds.toLocaleString()}</strong> completed ` +
           `(${p.elapsedMs.toFixed(0)} ms elapsed) — re-mixing the ` +
           `<span style="color: var(--color-salt);">salt</span> and ` +
@@ -210,7 +211,8 @@ function initEksSchedule(): void {
 
       progressEl.innerHTML =
         `Done in <strong>${timeMs.toFixed(0)} ms</strong> of real work: the key schedule executed all ` +
-        `<strong>2<sup>${cost}</sup> = ${totalRounds.toLocaleString()}</strong> rounds, and the finished ` +
+        `<strong>2<sup>${cost}</sup> = ${totalRounds.toLocaleString()}</strong> cost iterations ` +
+        `(${(1 + 2 * totalRounds).toLocaleString()} total ExpandKey calls), and the finished ` +
         `4&nbsp;KB state encrypted bcrypt's magic string into a hash.` + comparison;
     } catch (err) {
       progressEl.innerHTML =
@@ -226,7 +228,7 @@ function initEksSchedule(): void {
 /**
  * The 72-byte limit made visceral. We hash password A in the worker (a real
  * bcrypt hash), then verify password B against it. When A and B share a 72-byte
- * prefix, bcryptjs itself reports a match — no faking: bcrypt truly ignores
+ * prefix, bcryptjs itself reports a match — no faking: this implementation ignores
  * bytes past 72, so the real primitive returns true.
  */
 function init72ByteLimit(): void {
@@ -303,7 +305,7 @@ function init72ByteLimit(): void {
         `<div class="status-display" style="font-family: var(--font-mono); font-size: 0.75rem; word-break: break-all;">` +
         `bcrypt.compare(B, hash(A)) → <strong>${match ? 'true' : 'false'}</strong><br>hash(A) = ${escapeHtml(hash)}</div>` +
         (match && !identical
-          ? `<div class="status-display" style="font-size: 0.8125rem;">Everything after byte 72 was discarded before hashing. In production, truncate-and-warn or pre-hash long inputs (e.g. SHA-256 → base64) before bcrypt.</div>`
+          ? `<div class="status-display" style="font-size: 0.8125rem;">bcryptjs discarded everything after byte 72. For new or changed passwords, reject an over-limit input so the accepted credential matches what the user supplied. A pre-hash construction is safe only when its encoding, domain separation, and migration rules are specified and applied consistently; do not silently truncate.</div>`
           : '');
     } catch (err) {
       if (revision !== inputRevision) return;
@@ -489,20 +491,19 @@ export function initExhibit3(): void {
 
     const maxTime = Math.max(...results.map(r => r.timeMs));
 
-    // The login "sweet spot": ~250 ms is the classic threshold below which a
-    // hash feels instant to a human logging in. It's a target, not a hard wall,
-    // so we draw it as a marker line the bars cross rather than a hard zone.
+    // 250 ms is a local usability reference, not a security boundary. Production
+    // tuning also needs concurrent-load, abuse/DoS, and attacker-cost assumptions.
     const LOGIN_MS = 250;
     const loginPct = Math.min(100, (LOGIN_MS / maxTime) * 100);
 
-    let chartHtml = '<div class="zone-label zone-label--danger">⚠ Danger zone (cost &lt; 10)</div>';
+    let chartHtml = '<div class="zone-label zone-label--danger">Below OWASP’s Nov 2026 legacy-bcrypt minimum (cost &lt; 10)</div>';
     for (const r of results) {
       const pct = (r.timeMs / maxTime) * 100;
       const multiplier = (r.timeMs / baseTime).toFixed(1);
       const isSafe = r.cost >= 10;
       const instant = r.timeMs <= LOGIN_MS;
       if (r.cost === 10) {
-        chartHtml += '<div class="zone-label zone-label--safe">✓ Safe zone (cost ≥ 10)</div>';
+        chartHtml += '<div class="zone-label zone-label--safe">Meets OWASP’s Nov 2026 minimum (cost ≥ 10)</div>';
       }
       chartHtml +=
         `<div class="bar-row">` +
@@ -515,7 +516,7 @@ export function initExhibit3(): void {
         `<span class="bar-time">${r.timeMs.toFixed(0)} ms</span>` +
         `<span class="bar-multiplier">${multiplier}×</span>` +
         `<span class="bar-verdict ${instant ? 'bar-verdict--login' : 'bar-verdict--attack'}">` +
-        `${instant ? 'feels instant' : 'attacker-costly'}</span>` +
+        `${instant ? 'within 250 ms local target' : 'above 250 ms local target'}</span>` +
         `</div>`;
     }
     chartEl.innerHTML = chartHtml;

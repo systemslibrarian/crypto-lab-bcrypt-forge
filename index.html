@@ -244,9 +244,10 @@
         <section class="panel-section" aria-labelledby="p1-eks-heading">
           <h3 id="p1-eks-heading" class="section-title">Why bcrypt Is Slow: The Eksblowfish Key Schedule</h3>
           <p style="color: var(--color-text-2); font-size: 0.9375rem; margin-bottom: var(--space-4);">
-            The cost factor is not an arbitrary dial — it is literally an exponent. bcrypt runs
-            Blowfish's key setup, then <em>repeats</em> it <strong>2<sup>cost</sup></strong> times, each round
-            re-mixing your password and salt into an 18-word subkey array (the <span class="term" tabindex="0" role="button" aria-expanded="false" aria-describedby="def-parray">P-array<span class="term__tip" id="def-parray" role="tooltip">The 18 32-bit subkeys Blowfish derives from its key. In bcrypt these are re-derived every round, so the whole key schedule — not just one hash — is what gets repeated 2^cost times.</span></span>) and four
+            The cost factor is not an arbitrary dial — it is literally an exponent. Eksblowfish first
+            performs one salted expansion, then runs <strong>2<sup>cost</sup> cost iterations</strong>.
+            Each iteration performs two full ExpandKey calls, one with the password and one with the salt,
+            into an 18-word subkey array (the <span class="term" tabindex="0" role="button" aria-expanded="false" aria-describedby="def-parray">P-array<span class="term__tip" id="def-parray" role="tooltip">The 18 32-bit subkeys Blowfish derives from its key. After the initial salted expansion, each cost iteration makes two full ExpandKey calls: password, then salt.</span></span>) and four
             256-entry substitution boxes (the <span class="term" tabindex="0" role="button" aria-expanded="false" aria-describedby="def-sbox">S-boxes<span class="term__tip" id="def-sbox" role="tooltip">Four lookup tables of 256 32-bit words each = 4 KB of state that must be held and rewritten. This size is what makes bcrypt awkward to parallelize on a GPU's small per-core memory.</span></span>, 4 KB of state).
             That 4 KB of constantly-rewritten state is what makes bcrypt awkward to run massively-parallel on a GPU.
           </p>
@@ -260,7 +261,7 @@
               <span id="p1-eks-cost-value" class="range-value">6</span>
             </div>
             <p id="p1-eks-rounds" style="font-size: 0.9375rem; color: var(--color-text-2); margin: var(--space-2) 0 0;">
-              cost 6 → 2<sup>6</sup> = <strong style="color: var(--color-warning-text);">64</strong> key-expansion rounds
+              cost 6 → 2<sup>6</sup> = <strong style="color: var(--color-warning-text);">64</strong> cost iterations; 129 total ExpandKey calls
             </p>
           </div>
 
@@ -289,10 +290,11 @@
         </section>
 
         <section class="panel-section" aria-labelledby="p1-72-heading">
-          <h3 id="p1-72-heading" class="section-title">The 72-Byte Limit — bcrypt's #1 Footgun</h3>
+          <h3 id="p1-72-heading" class="section-title">bcryptjs and the Current $2b$ 72-Byte Limit</h3>
           <p style="color: var(--color-text-2); font-size: 0.9375rem; margin-bottom: var(--space-4);">
-            bcrypt only feeds the <strong>first 72 bytes</strong> of a password into the key schedule. Everything
-            after byte 72 is silently ignored. Two different passwords that share the same 72-byte prefix
+            This lesson uses <strong>bcryptjs with current $2b$ behavior</strong>, which feeds only the first
+            <strong>72 UTF-8 bytes</strong> of a password into the key schedule. Historical implementations and
+            versions have had other limits. Here, everything after byte 72 is silently ignored. Two different passwords that share the same 72-byte prefix
             therefore produce a hash that <em>verifies against either one</em>. Type two long passwords below
             that agree for the first 72 bytes but differ afterward, and watch them cross-verify.
           </p>
@@ -324,8 +326,8 @@
         <div class="callout">
           <div class="callout__title">Why This Matters</div>
           bcrypt is the most widely deployed password hashing scheme in production systems.
-          Understanding its structure — that “cost” means literal rounds of Blowfish key setup, and
-          that only the first 72 bytes count — helps developers store, verify, and migrate passwords
+          Understanding its structure — that “cost” means a power-of-two iteration count, with two
+          expansions per iteration, and that this bcryptjs path accepts only the first 72 UTF-8 bytes — helps developers store, verify, and migrate passwords
           safely, and choose a cost that is slow for attackers yet fast enough for login.
         </div>
       </div>
@@ -402,7 +404,8 @@
         <h2 class="panel__title">Cost Factor Timing Benchmark</h2>
         <p class="panel__intro">
           Hashes the same password at cost factors 8 through 14, sequentially.
-          Each +1 in cost doubles the computation time. This is by design — the slowness IS the security.
+          Each +1 in cost doubles the work. Timings are measurements of this browser and device,
+          not production capacity results or a security boundary.
         </p>
 
         <div class="button-row">
@@ -421,11 +424,11 @@
           <div id="p3-thresholds" class="threshold-legend" hidden>
             <span class="threshold-legend__item">
               <span class="threshold-legend__swatch threshold-legend__swatch--login" aria-hidden="true"></span>
-              Login sweet spot: under ~250&nbsp;ms feels instant to a user
+              250&nbsp;ms is this lesson's local usability reference, not a security boundary
             </span>
             <span class="threshold-legend__item">
               <span class="threshold-legend__swatch threshold-legend__swatch--attack" aria-hidden="true"></span>
-              Above ~250&nbsp;ms: each step multiplies an attacker's per-guess cost toward infeasible
+              Production tuning must include concurrency, abuse/DoS budget, and attacker assumptions
             </span>
           </div>
         </section>
@@ -434,9 +437,10 @@
 
         <div class="callout callout--warning">
           <div class="callout__title">Why Can't We Just Make It Faster?</div>
-          The slowness IS the security. An attacker with a GPU farm faces the same
-          cost per hash you do. Each cost increase doubles their work for every
-          password in a breached database.
+          Defender and attacker share the same work-factor exponent, so each +1 doubles the algorithm's
+          iteration count. They do <strong>not</strong> necessarily face the same elapsed time or monetary cost:
+          optimized GPU, FPGA, or ASIC implementations can be much more efficient than this browser.
+          bcrypt's fixed 4&nbsp;KB state limits some parallelism; it does not make hardware equal.
         </div>
       </div>
     </section>
