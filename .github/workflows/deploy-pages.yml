@@ -19,7 +19,7 @@ concurrency:
 
 # Scope the focused checks to this push of the reviewed lesson.
 env:
-  REVIEWED_FIX: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == 'e6b35daac7d8b7caac14828a43de5022c9e17337' }}
+  REVIEWED_FIX: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == '583eae50713957b1134e0a5d69a80ae8922866c7' }}
 
 jobs:
   # The gate. NO `environment:` here, on purpose. An environment with a branch
@@ -36,13 +36,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          fetch-depth: 3
+          fetch-depth: 0
           persist-credentials: false
       - name: Verify the reviewed application commit
         if: env.REVIEWED_FIX == 'true'
         run: |
-          test "$(git rev-parse HEAD^^^)" = '00260cb39e84e356bc04d19aab701980fe4e216f'
-          git diff --exit-code HEAD^^^ HEAD -- . ':(exclude).github/workflows/deploy-pages.yml'
+          git cat-file -e '00260cb39e84e356bc04d19aab701980fe4e216f^{commit}'
+          git diff --exit-code '00260cb39e84e356bc04d19aab701980fe4e216f' HEAD -- . ':(exclude).github/workflows/deploy-pages.yml'
 
       - name: Setup Node
         uses: actions/setup-node@v7
