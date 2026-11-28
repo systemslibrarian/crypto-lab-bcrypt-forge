@@ -261,11 +261,18 @@ function init72ByteLimit(): void {
         : `<span style="color: var(--color-text-3);">Make both longer than 72 bytes while keeping the first 72 identical to force a collision.</span>`);
   };
 
-  aInput.addEventListener('input', updatePrefix);
-  bInput.addEventListener('input', updatePrefix);
+  let inputRevision = 0;
+  const inputsChanged = (): void => {
+    inputRevision++;
+    resultEl.replaceChildren();
+    updatePrefix();
+  };
+  aInput.addEventListener('input', inputsChanged);
+  bInput.addEventListener('input', inputsChanged);
   updatePrefix();
 
   runBtn.addEventListener('click', async () => {
+    const revision = inputRevision;
     const a = aInput.value;
     const b = bInput.value;
     if (!a || !b) {
@@ -278,7 +285,9 @@ function init72ByteLimit(): void {
 
     try {
       const { hash } = await cryptoClient.hash(a, 10);
+      if (revision !== inputRevision) return;
       const { match } = await cryptoClient.compare(b, hash);
+      if (revision !== inputRevision) return;
       const identical = a === b;
       const cls = match ? 'verify-result--no-match' : 'verify-result--match';
       // Note: here a MATCH is the *alarming* outcome (B ≠ A yet verifies), so we
@@ -297,6 +306,7 @@ function init72ByteLimit(): void {
           ? `<div class="status-display" style="font-size: 0.8125rem;">Everything after byte 72 was discarded before hashing. In production, truncate-and-warn or pre-hash long inputs (e.g. SHA-256 → base64) before bcrypt.</div>`
           : '');
     } catch (err) {
+      if (revision !== inputRevision) return;
       resultEl.innerHTML = `<div class="verify-result verify-result--no-match">Failed: ${escapeHtml(String(err))}</div>`;
     } finally {
       runBtn.disabled = false;
