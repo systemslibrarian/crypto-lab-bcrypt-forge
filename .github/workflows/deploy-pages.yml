@@ -19,7 +19,7 @@ concurrency:
 
 # Scope the focused checks to this push of the reviewed lesson.
 env:
-  REVIEWED_FIX: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == '7abf4058883d91a0c803a3234f28548ec75fc231' }}
+  REVIEWED_FIX: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == '00260cb39e84e356bc04d19aab701980fe4e216f' }}
 
 jobs:
   # The gate. NO `environment:` here, on purpose. An environment with a branch
@@ -41,7 +41,7 @@ jobs:
       - name: Verify the reviewed application commit
         if: env.REVIEWED_FIX == 'true'
         run: |
-          test "$(git rev-parse HEAD^)" = '281dac96d2b95158b00c111246eea601035c85db'
+          test "$(git rev-parse HEAD^)" = '00260cb39e84e356bc04d19aab701980fe4e216f'
           git diff --exit-code HEAD^ HEAD -- . ':(exclude).github/workflows/deploy-pages.yml'
 
       - name: Setup Node
@@ -58,7 +58,7 @@ jobs:
 
       - name: Test the reviewed lesson correction
         if: env.REVIEWED_FIX == 'true'
-        run: npx --no-install vitest run src/lib.test.ts src/bcrypt.integration.test.ts -t 'md5|parseBcryptHash|isBcryptHash|formatDuration|variance|bcryptjs'
+        run: npm test
       - name: Run tests
         if: env.REVIEWED_FIX != 'true'
         run: npm test
@@ -71,7 +71,7 @@ jobs:
 
       - name: Check the corrected student activity
         if: env.REVIEWED_FIX == 'true'
-        run: npx --no-install playwright test --project=chromium e2e/comparison-state.spec.ts
+        run: npx --no-install playwright test --project=chromium e2e/comparison-state.spec.ts e2e/claims.spec.ts --grep 'editing either password|benchmark rows'
       - name: Accessibility gate (axe-core, WCAG A/AA)
         if: env.REVIEWED_FIX != 'true'
         run: npm run test:a11y
@@ -88,7 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           actual=$(find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)
-          test "${actual%% *}" = '6e694b088c7756af1a081a7c3cca15fa67a19ccb1acb21dcf34388902cbfbfb2'
+          test "${actual%% *}" = '8657186e8775327240c1049d11e8054a58d88ff31a8c7c40c94d1e248daba208'
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
