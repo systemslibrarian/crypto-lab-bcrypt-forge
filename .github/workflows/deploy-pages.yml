@@ -19,7 +19,7 @@ concurrency:
 
 # Scope the focused checks to this push of the reviewed lesson.
 env:
-  REVIEWED_FIX: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == '00260cb39e84e356bc04d19aab701980fe4e216f' }}
+  REVIEWED_FIX: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == '1d0239ec1e3e3a0269b830ec10b8cc0b6013c44b' }}
 
 jobs:
   # The gate. NO `environment:` here, on purpose. An environment with a branch
@@ -41,8 +41,8 @@ jobs:
       - name: Verify the reviewed application commit
         if: env.REVIEWED_FIX == 'true'
         run: |
-          test "$(git rev-parse HEAD^)" = '00260cb39e84e356bc04d19aab701980fe4e216f'
-          git diff --exit-code HEAD^ HEAD -- . ':(exclude).github/workflows/deploy-pages.yml'
+          test "$(git rev-parse HEAD^^)" = '00260cb39e84e356bc04d19aab701980fe4e216f'
+          git diff --exit-code HEAD^^ HEAD -- . ':(exclude).github/workflows/deploy-pages.yml'
 
       - name: Setup Node
         uses: actions/setup-node@v7
@@ -88,6 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           actual=$(find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)
+          echo "reviewed-build-sha256=${actual%% *}"
           test "${actual%% *}" = '8657186e8775327240c1049d11e8054a58d88ff31a8c7c40c94d1e248daba208'
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
